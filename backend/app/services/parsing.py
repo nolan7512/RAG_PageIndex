@@ -121,8 +121,57 @@ def _parse_pdf(document_id: str, path: Path, filename: str) -> List[ContentBlock
         if text.strip():
             blocks.append(_text_block(document_id, page_index, text, filename, parser="pypdf"))
     if not blocks:
-        blocks.append(_text_block(document_id, 1, "No extractable PDF text found. OCR parser is required.", filename))
+        blocks = _ocr_pdf(document_id, path, filename, len(reader.pages))
     return blocks
+
+
+def _ocr_pdf(document_id: str, path: Path, filename: str, page_count: int) -> List[ContentBlock]:
+    if not settings.pdf_ocr_enabled:
+        return [_text_block(document_id, 1, "No extractable PDF text found. OCR parser is disabled.", filename)]
+
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except Exception as exc:
+        return [_text_block(document_id, 1, f"No extractable PDF text found. OCR parser unavailable: {exc}", filename)]
+
+    blocks: List[ContentBlock] = []
+    try:
+        pdf = pdfium.PdfDocument(str(path))
+        max_pages = min(len(pdf), max(1, settings.pdf_ocr_max_pages))
+        for page_index in range(max_pages):
+            page = pdf[page_index]
+            bitmap = page.render(scale=settings.pdf_ocr_scale)
+            image = bitmap.to_pil()
+            text = pytesseract.image_to_string(image, lang=settings.pdf_ocr_lang).strip()
+            blocks.append(
+                ContentBlock(
+                    document_id=document_id,
+                    page_number=page_index + 1,
+                    block_type="text",
+                    content=text or "OCR produced no text for this page.",
+                    metadata={
+                        "parser": "tesseract-pdf-ocr",
+                        "source_file": filename,
+                        "ocr_lang": settings.pdf_ocr_lang,
+                        "ocr_scale": settings.pdf_ocr_scale,
+                    },
+                )
+            )
+    except Exception as exc:
+        return [_text_block(document_id, 1, f"No extractable PDF text found. OCR failed: {exc}", filename)]
+
+    if page_count > len(blocks):
+        blocks.append(
+            _text_block(
+                document_id,
+                len(blocks) + 1,
+                f"OCR stopped after {len(blocks)} of {page_count} pages due to PDF_OCR_MAX_PAGES.",
+                filename,
+                parser="tesseract-pdf-ocr",
+            )
+        )
+    return blocks or [_text_block(document_id, 1, "No extractable PDF text found. OCR produced no pages.", filename)]
 
 
 def _parse_docx(document_id: str, path: Path, filename: str) -> List[ContentBlock]:

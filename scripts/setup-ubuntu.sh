@@ -15,6 +15,10 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 USE_FAKE_OPENAI="${USE_FAKE_OPENAI:-false}"
 ENABLE_RAG_ANYTHING="${ENABLE_RAG_ANYTHING:-true}"
+PDF_OCR_ENABLED="${PDF_OCR_ENABLED:-true}"
+PDF_OCR_LANG="${PDF_OCR_LANG:-vie+eng}"
+PDF_OCR_SCALE="${PDF_OCR_SCALE:-2.0}"
+PDF_OCR_MAX_PAGES="${PDF_OCR_MAX_PAGES:-100}"
 PAGEINDEX_MIN_PAGES="${PAGEINDEX_MIN_PAGES:-30}"
 ASSUME_YES="${ASSUME_YES:-false}"
 
@@ -246,6 +250,10 @@ ensure_env_file() {
   set_env_value FRONTEND_ORIGIN "$frontend_origin"
   set_env_value NEXT_PUBLIC_API_BASE_URL "$api_base"
   set_env_value ENABLE_RAG_ANYTHING "$ENABLE_RAG_ANYTHING"
+  set_env_value PDF_OCR_ENABLED "$PDF_OCR_ENABLED"
+  set_env_value PDF_OCR_LANG "$PDF_OCR_LANG"
+  set_env_value PDF_OCR_SCALE "$PDF_OCR_SCALE"
+  set_env_value PDF_OCR_MAX_PAGES "$PDF_OCR_MAX_PAGES"
   set_env_value PAGEINDEX_MIN_PAGES "$PAGEINDEX_MIN_PAGES"
 
   local current_pg_password
