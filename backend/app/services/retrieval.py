@@ -20,6 +20,7 @@ class RetrievedChunk:
     chunk: DocumentChunk
     document: Document
     score: float
+    lexical_score: float = 0.0
 
 
 def retrieve_chunks(db: Session, user: User, query: str, limit: int = 8, candidates: int = 30) -> List[RetrievedChunk]:
@@ -36,6 +37,8 @@ def retrieve_chunks(db: Session, user: User, query: str, limit: int = 8, candida
     boosted = list(by_id.values())
     _apply_pageindex_boosts(db, query, boosted)
     boosted.sort(key=lambda item: item.score, reverse=True)
+    for result in boosted:
+        result.lexical_score = max(result.lexical_score, lexical_score(query, result.chunk.content))
     return boosted[:limit]
 
 
@@ -47,6 +50,7 @@ def result_to_dict(result: RetrievedChunk):
         "chunk_id": result.chunk.id,
         "excerpt": excerpt(result.chunk.content),
         "score": round(float(result.score), 4),
+        "lexical_score": round(float(result.lexical_score), 4),
     }
 
 
@@ -114,7 +118,14 @@ def _keyword_search(db: Session, user: User, query: str, candidates: int) -> Lis
     for chunk, document in rows:
         score = lexical_score(query, chunk.content)
         if score > 0:
-            results.append(RetrievedChunk(chunk=chunk, document=document, score=min(0.88, 0.42 + score * 0.46)))
+            results.append(
+                RetrievedChunk(
+                    chunk=chunk,
+                    document=document,
+                    score=min(0.88, 0.42 + score * 0.46),
+                    lexical_score=score,
+                )
+            )
     results.sort(key=lambda item: item.score, reverse=True)
     return results[:candidates]
 

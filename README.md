@@ -86,7 +86,8 @@ npm run build
 ## Notes
 
 - RAG-Anything is attempted first when installed and enabled. If it is unavailable or fails for a file, the worker falls back to local parsers for PDF, DOCX, PPTX, XLSX, TXT, and images.
-- Scanned PDFs are OCRed in the fallback parser by rendering pages with pypdfium2. `PDF_OCR_ENGINE=auto` prefers PaddleOCR when available, stores line confidence/bounding boxes, and falls back to Tesseract Vietnamese/English OCR. Tune with `PDF_OCR_LANG`, `PADDLE_OCR_LANG`, `PDF_OCR_SCALE`, and `PDF_OCR_MAX_PAGES`.
+- Scanned PDFs are OCRed in the fallback parser by rendering pages with pypdfium2. `PDF_OCR_ENGINE=auto` tries PaddleOCR, then VietOCR, then Tesseract Vietnamese/English OCR, storing line confidence/bounding boxes when available. Tune with `PDF_OCR_LANG`, `PADDLE_OCR_LANG`, `VIETOCR_CONFIG`, `OCR_MIN_LINE_CONFIDENCE`, `PDF_OCR_SCALE`, and `PDF_OCR_MAX_PAGES`.
+- Chat context is capped by `CHAT_CONTEXT_LIMIT`, `CHAT_CONTEXT_MAX_CHARS`, and `CHAT_CHUNK_MAX_CHARS` to control OpenAI input tokens. Low-relevance contexts are skipped, and no-information answers return without citations.
 - PageIndex is attempted for long documents when `PAGEINDEX_COMMAND` is configured. Otherwise the worker creates a lightweight page tree from parsed chunks so the API contract still works.
 - Vietnamese retrieval now includes Unicode normalization and diacritic-insensitive lexical fallback. See `docs/VIETNAMESE_RAG_PLAN.md`.
 - Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.

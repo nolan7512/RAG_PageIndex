@@ -26,12 +26,15 @@ def answer_question(
     message: str,
     conversation_id: str = None,
 ) -> Tuple[str, Conversation, List[dict]]:
-    retrieved = retrieve_chunks(db, user, message, limit=8)
+    retrieved = retrieve_chunks(db, user, message, limit=max(settings.chat_context_limit * 2, 8))
+    context_chunks = _select_chat_context(message, retrieved)
     conversation = _get_or_create_conversation(db, user, conversation_id, message)
-    citations = [_citation_dict(item) for item in retrieved]
+    citations = [_citation_dict(item) for item in context_chunks]
 
     db.add(ConversationMessage(conversation_id=conversation.id, role="user", content=message, citations=[]))
-    answer = _generate_answer(message, retrieved)
+    answer = _generate_answer(message, context_chunks)
+    if _is_no_information_answer(answer):
+        citations = []
     db.add(
         ConversationMessage(
             conversation_id=conversation.id,
@@ -62,6 +65,19 @@ def _get_or_create_conversation(db: Session, user: User, conversation_id: str, m
     return conversation
 
 
+def _select_chat_context(message: str, retrieved: List[RetrievedChunk]) -> List[RetrievedChunk]:
+    selected = [
+        item
+        for item in retrieved
+        if item.score >= settings.chat_min_relevance_score and item.lexical_score >= settings.chat_min_lexical_score
+    ]
+    if not selected and retrieved:
+        top = retrieved[0]
+        if top.score >= max(0.78, settings.chat_min_relevance_score) and top.lexical_score > 0:
+            selected = [top]
+    return selected[: max(1, settings.chat_context_limit)]
+
+
 def _generate_answer(message: str, retrieved: List[RetrievedChunk]) -> str:
     if not retrieved:
         return "Không tìm thấy thông tin phù hợp trong các tài liệu hiện có."
@@ -70,10 +86,7 @@ def _generate_answer(message: str, retrieved: List[RetrievedChunk]) -> str:
     if not settings.openai_api_key:
         raise OpenAIUnavailable("OPENAI_API_KEY is not configured")
 
-    context = "\n\n".join(
-        f"[{index}] File: {item.document.filename} | Page: {item.chunk.page_number} | Chunk: {item.chunk.id}\n{item.chunk.content}"
-        for index, item in enumerate(retrieved, start=1)
-    )
+    context = _build_limited_context(retrieved)
     user_prompt = f"""Document context:
 {context}
 
@@ -107,6 +120,38 @@ User question:
     except OpenAIError as exc:
         raise OpenAIUnavailable(f"OpenAI chat request failed: {exc}") from exc
     return response.choices[0].message.content.strip()
+
+
+def _is_no_information_answer(answer: str) -> bool:
+    normalized = answer.lower()
+    markers = [
+        "không tìm thấy",
+        "khong tim thay",
+        "không có trong tài liệu",
+        "khong co trong tai lieu",
+        "not found in the document",
+        "not found in the documents",
+    ]
+    return any(marker in normalized for marker in markers)
+
+
+def _build_limited_context(retrieved: List[RetrievedChunk]) -> str:
+    parts = []
+    used_chars = 0
+    for index, item in enumerate(retrieved, start=1):
+        content = item.chunk.content.strip()
+        if len(content) > settings.chat_chunk_max_chars:
+            content = content[: settings.chat_chunk_max_chars].rstrip() + "..."
+        header = f"[{index}] File: {item.document.filename} | Page: {item.chunk.page_number} | Chunk: {item.chunk.id}"
+        part = f"{header}\n{content}"
+        if used_chars + len(part) > settings.chat_context_max_chars:
+            remaining = settings.chat_context_max_chars - used_chars
+            if remaining > 240:
+                parts.append(part[:remaining].rstrip() + "...")
+            break
+        parts.append(part)
+        used_chars += len(part)
+    return "\n\n".join(parts)
 
 
 def _citation_dict(item: RetrievedChunk) -> dict:

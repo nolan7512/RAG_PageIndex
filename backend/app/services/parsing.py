@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import json
 import tempfile
 from functools import lru_cache
@@ -185,7 +186,31 @@ def _ocr_image_to_block(document_id: str, image, filename: str, page_number: int
 
     if settings.pdf_ocr_engine == "paddle":
         return _text_block(document_id, page_number, "PaddleOCR unavailable or produced no text.", filename, parser="paddleocr")
-    return _ocr_image_with_tesseract(document_id, image, filename, page_number)
+
+    if settings.pdf_ocr_engine in {"auto", "vietocr"}:
+        vietocr_result = _ocr_image_with_vietocr(image)
+        if vietocr_result is not None and (vietocr_result["text"].strip() or settings.pdf_ocr_engine == "vietocr"):
+            return ContentBlock(
+                document_id=document_id,
+                page_number=page_number,
+                block_type="text",
+                content=vietocr_result["text"].strip() or "OCR produced no text for this page.",
+                metadata={
+                    "parser": "vietocr",
+                    "source_file": filename,
+                    "ocr_device": settings.vietocr_device,
+                    "ocr_config": settings.vietocr_config,
+                    "ocr_scale": settings.pdf_ocr_scale,
+                    "ocr_confidence_avg": vietocr_result["confidence_avg"],
+                    "ocr_confidence_min": vietocr_result["confidence_min"],
+                    "ocr_line_count": len(vietocr_result["lines"]),
+                    "ocr_lines": vietocr_result["lines"],
+                },
+            )
+
+    if settings.pdf_ocr_engine == "vietocr":
+        return _text_block(document_id, page_number, "VietOCR unavailable or produced no text.", filename, parser="vietocr")
+    return _ocr_image_with_tesseract(document_id, image, filename, page_number, fallback_reason="advanced_ocr_unavailable_or_empty")
 
 
 def _ocr_image_with_paddle(image) -> Optional[Dict[str, Any]]:
@@ -199,7 +224,7 @@ def _ocr_image_with_paddle(image) -> Optional[Dict[str, Any]]:
     try:
         image.save(temp_path)
         result = _run_paddle_ocr(ocr, temp_path)
-        lines = _extract_paddle_lines(result)
+        lines = _filter_ocr_lines(_extract_paddle_lines(result))
         text = "\n".join(line["text"] for line in lines if line["text"].strip())
         confidences = [line["confidence"] for line in lines if line.get("confidence") is not None]
         confidence_avg = round(sum(confidences) / len(confidences), 4) if confidences else None
@@ -214,6 +239,44 @@ def _ocr_image_with_paddle(image) -> Optional[Dict[str, Any]]:
         return None
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def _ocr_image_with_vietocr(image) -> Optional[Dict[str, Any]]:
+    try:
+        detector = _vietocr_engine()
+        import pytesseract
+
+        data = pytesseract.image_to_data(image, lang=settings.pdf_ocr_lang, output_type=pytesseract.Output.DICT)
+        boxes, base_confidences = _extract_tesseract_boxes(data)
+        lines = []
+        for box, base_confidence in zip(boxes, base_confidences):
+            left, top, right, bottom = box
+            crop = image.crop((left, top, right, bottom))
+            text = str(detector.predict(crop)).strip()
+            if not text:
+                continue
+            lines.append({"text": text, "confidence": base_confidence, "bbox": box})
+        lines = _filter_ocr_lines(lines)
+        confidences = [line["confidence"] for line in lines if line.get("confidence") is not None]
+        return {
+            "text": "\n".join(line["text"] for line in lines),
+            "confidence_avg": round(sum(confidences) / len(confidences), 4) if confidences else None,
+            "confidence_min": round(min(confidences), 4) if confidences else None,
+            "lines": lines[:200],
+        }
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=1)
+def _vietocr_engine():
+    from vietocr.tool.config import Cfg
+    from vietocr.tool.predictor import Predictor
+
+    config = Cfg.load_config_from_name(settings.vietocr_config)
+    config["device"] = settings.vietocr_device
+    config["predictor"]["beamsearch"] = False
+    return Predictor(config)
 
 
 @lru_cache(maxsize=1)
@@ -292,14 +355,19 @@ def _extract_paddle_lines_from_legacy(result: List[Any]) -> List[Dict[str, Any]]
     return lines
 
 
-def _ocr_image_with_tesseract(document_id: str, image, filename: str, page_number: int) -> ContentBlock:
+def _ocr_image_with_tesseract(
+    document_id: str,
+    image,
+    filename: str,
+    page_number: int,
+    fallback_reason: str = None,
+) -> ContentBlock:
     try:
         import pytesseract
 
-        text = pytesseract.image_to_string(image, lang=settings.pdf_ocr_lang).strip()
         data = pytesseract.image_to_data(image, lang=settings.pdf_ocr_lang, output_type=pytesseract.Output.DICT)
         lines, confidence_avg, confidence_min = _extract_tesseract_lines(data)
-        content = text or "OCR produced no text for this page."
+        content = "\n".join(line["text"] for line in lines).strip() or "OCR produced no text for this page."
     except Exception as exc:
         content = f"OCR unavailable for this page: {exc}"
         lines, confidence_avg, confidence_min = [], None, None
@@ -317,6 +385,10 @@ def _ocr_image_with_tesseract(document_id: str, image, filename: str, page_numbe
             "ocr_confidence_min": confidence_min,
             "ocr_line_count": len(lines),
             "ocr_lines": lines[:200],
+            "preferred_ocr_engine": settings.pdf_ocr_engine,
+            "paddleocr_available": _module_available("paddleocr"),
+            "vietocr_available": _module_available("vietocr"),
+            "fallback_reason": fallback_reason,
         },
     )
 
@@ -347,7 +419,7 @@ def _extract_tesseract_lines(data: Dict[str, List[Any]]) -> Tuple[List[Dict[str,
         line["bbox"][3] = max(line["bbox"][3], top + height)
         confidences.append(confidence / 100.0)
 
-    lines = [
+    lines = _filter_ocr_lines([
         {
             "text": " ".join(value["words"]),
             "confidence": round(sum(value["confidences"]) / len(value["confidences"]), 4),
@@ -355,10 +427,29 @@ def _extract_tesseract_lines(data: Dict[str, List[Any]]) -> Tuple[List[Dict[str,
         }
         for value in grouped.values()
         if value["words"]
-    ]
-    confidence_avg = round(sum(confidences) / len(confidences), 4) if confidences else None
-    confidence_min = round(min(confidences), 4) if confidences else None
+    ])
+    filtered_confidences = [line["confidence"] for line in lines if line.get("confidence") is not None]
+    confidence_avg = round(sum(filtered_confidences) / len(filtered_confidences), 4) if filtered_confidences else None
+    confidence_min = round(min(filtered_confidences), 4) if filtered_confidences else None
     return lines[:200], confidence_avg, confidence_min
+
+
+def _extract_tesseract_boxes(data: Dict[str, List[Any]]) -> Tuple[List[List[int]], List[Optional[float]]]:
+    lines, _, _ = _extract_tesseract_lines(data)
+    return [line["bbox"] for line in lines], [line.get("confidence") for line in lines]
+
+
+def _filter_ocr_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    filtered = []
+    for line in lines:
+        confidence = line.get("confidence")
+        if confidence is not None and confidence < settings.ocr_min_line_confidence:
+            continue
+        text = str(line.get("text") or "").strip()
+        if not text:
+            continue
+        filtered.append({**line, "text": text})
+    return filtered
 
 
 def _to_plain_list(value):
@@ -384,6 +475,10 @@ def _safe_float(value) -> Optional[float]:
         return round(float(value), 4)
     except (TypeError, ValueError):
         return None
+
+
+def _module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
 
 
 def _parse_docx(document_id: str, path: Path, filename: str) -> List[ContentBlock]:

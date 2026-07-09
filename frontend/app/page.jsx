@@ -504,6 +504,13 @@ function ParsedBlock({ block }) {
         {confidenceAvg ? <span>avg {confidenceAvg}</span> : null}
         {confidenceMin ? <span>min {confidenceMin}</span> : null}
         {block.metadata?.ocr_line_count ? <span>{block.metadata.ocr_line_count} dòng OCR</span> : null}
+        {block.metadata?.paddleocr_available !== undefined ? (
+          <span>paddle {block.metadata.paddleocr_available ? "yes" : "no"}</span>
+        ) : null}
+        {block.metadata?.vietocr_available !== undefined ? (
+          <span>vietocr {block.metadata.vietocr_available ? "yes" : "no"}</span>
+        ) : null}
+        {block.metadata?.fallback_reason ? <span>{block.metadata.fallback_reason}</span> : null}
       </div>
       <pre>{block.content}</pre>
       {ocrLines.length ? <OcrLinePreview lines={ocrLines} /> : null}

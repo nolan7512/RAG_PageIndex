@@ -1,5 +1,5 @@
-# Optional advanced OCR. Docker installs this best-effort; if it fails,
-# the app still uses the Tesseract fallback OCR path.
+# Optional advanced OCR packages. Docker installs these best-effort.
 pypdfium2>=4.30.0
 paddlepaddle>=3.0.0
 paddleocr>=3.0.0
+vietocr>=0.3.13

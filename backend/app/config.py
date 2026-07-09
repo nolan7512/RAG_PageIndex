@@ -36,11 +36,20 @@ class Settings(BaseSettings):
     pdf_ocr_lang: str = "vie+eng"
     pdf_ocr_scale: float = 2.0
     pdf_ocr_max_pages: int = 100
+    ocr_min_line_confidence: float = 0.35
     paddle_ocr_lang: str = "vi"
     paddle_ocr_device: str = "cpu"
+    vietocr_device: str = "cpu"
+    vietocr_config: str = "vgg_transformer"
     pageindex_min_pages: int = 30
     pageindex_command: Optional[str] = None
     sync_ingestion_on_queue_failure: bool = False
+
+    chat_context_limit: int = 5
+    chat_context_max_chars: int = 3500
+    chat_chunk_max_chars: int = 900
+    chat_min_relevance_score: float = 0.35
+    chat_min_lexical_score: float = 0.08
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

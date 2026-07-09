@@ -49,4 +49,17 @@ def test_extract_tesseract_lines_groups_words_and_confidence():
 
     assert lines == [{"text": "Tai nạn", "confidence": 0.85, "bbox": [10, 20, 76, 32]}]
     assert confidence_avg == 0.85
-    assert confidence_min == 0.8
+    assert confidence_min == 0.85
+
+
+def test_filter_ocr_lines_drops_low_confidence(monkeypatch):
+    monkeypatch.setattr(parsing.settings, "ocr_min_line_confidence", 0.35)
+
+    lines = parsing._filter_ocr_lines(
+        [
+            {"text": "nhiễu", "confidence": 0.2, "bbox": [0, 0, 10, 10]},
+            {"text": "tai nạn lao động", "confidence": 0.9, "bbox": [0, 20, 100, 40]},
+        ]
+    )
+
+    assert lines == [{"text": "tai nạn lao động", "confidence": 0.9, "bbox": [0, 20, 100, 40]}]
