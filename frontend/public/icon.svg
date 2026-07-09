@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RAG PageIndex">
+  <rect width="64" height="64" rx="14" fill="oklch(0.47 0.105 110)" />
+  <path d="M20 15h18l8 8v26H20z" fill="oklch(1 0 0)" />
+  <path d="M38 15v9h8" fill="none" stroke="oklch(0.47 0.105 110)" stroke-width="3" />
+  <path d="M25 32h15M25 39h12" stroke="oklch(0.47 0.105 110)" stroke-width="3" stroke-linecap="round" />
+</svg>

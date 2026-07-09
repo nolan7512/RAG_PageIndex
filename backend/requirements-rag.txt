@@ -1,0 +1,3 @@
+# Optional heavy parser integration. The app works without this file installed,
+# but the worker will prefer RAG-Anything when the package is available.
+raganything[image,text]
