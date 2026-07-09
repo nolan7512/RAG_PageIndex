@@ -68,10 +68,12 @@ prompt_text() {
     return
   fi
   if [[ -n "$default_value" ]]; then
-    read -r -p "${prompt} [${default_value}]: " answer
+    printf "%s [%s]: " "$prompt" "$default_value" >&2
+    read -r answer
     printf "%s" "${answer:-$default_value}"
   else
-    read -r -p "${prompt}: " answer
+    printf "%s: " "$prompt" >&2
+    read -r answer
     printf "%s" "$answer"
   fi
 }
@@ -83,7 +85,8 @@ prompt_secret() {
     printf "%s" "${OPENAI_API_KEY:-}"
     return
   fi
-  read -r -s -p "${prompt}: " answer
+  printf "%s: " "$prompt" >&2
+  read -r -s answer
   printf "\n" >&2
   printf "%s" "$answer"
 }
@@ -97,14 +100,15 @@ prompt_menu() {
     printf "1"
     return
   fi
-  printf "\n%s\n" "$prompt"
+  printf "\n%s\n" "$prompt" >&2
   local index=1
   for option in "${options[@]}"; do
-    printf "  %s) %s\n" "$index" "$option"
+    printf "  %s) %s\n" "$index" "$option" >&2
     index=$((index + 1))
   done
   while true; do
-    read -r -p "Choose [1-${#options[@]}]: " answer
+    printf "Choose [1-%s]: " "${#options[@]}" >&2
+    read -r answer
     if [[ "$answer" =~ ^[0-9]+$ ]] && (( answer >= 1 && answer <= ${#options[@]} )); then
       printf "%s" "$answer"
       return
