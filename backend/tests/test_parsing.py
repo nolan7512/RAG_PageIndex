@@ -12,3 +12,41 @@ def test_pdf_ocr_disabled_returns_clear_block(monkeypatch, tmp_path):
     assert blocks[0].page_number == 1
     assert "OCR parser is disabled" in blocks[0].content
     assert blocks[0].metadata["parser"] == "fallback"
+
+
+def test_extract_paddle_lines_from_dict_includes_confidence_and_bbox():
+    result = {
+        "rec_texts": ["Xin chào", "Tai nạn lao động"],
+        "rec_scores": [0.91, 0.82],
+        "dt_polys": [
+            [[0, 0], [100, 0], [100, 20], [0, 20]],
+            [[0, 30], [180, 30], [180, 50], [0, 50]],
+        ],
+    }
+
+    lines = parsing._extract_paddle_lines_from_dict(result)
+
+    assert lines == [
+        {"text": "Xin chào", "confidence": 0.91, "bbox": [[0, 0], [100, 0], [100, 20], [0, 20]]},
+        {"text": "Tai nạn lao động", "confidence": 0.82, "bbox": [[0, 30], [180, 30], [180, 50], [0, 50]]},
+    ]
+
+
+def test_extract_tesseract_lines_groups_words_and_confidence():
+    data = {
+        "text": ["Tai", "nạn", ""],
+        "conf": ["90", "80", "-1"],
+        "block_num": [1, 1, 1],
+        "par_num": [1, 1, 1],
+        "line_num": [1, 1, 2],
+        "left": [10, 42, 0],
+        "top": [20, 20, 0],
+        "width": [28, 34, 0],
+        "height": [12, 12, 0],
+    }
+
+    lines, confidence_avg, confidence_min = parsing._extract_tesseract_lines(data)
+
+    assert lines == [{"text": "Tai nạn", "confidence": 0.85, "bbox": [10, 20, 76, 32]}]
+    assert confidence_avg == 0.85
+    assert confidence_min == 0.8

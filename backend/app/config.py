@@ -32,9 +32,12 @@ class Settings(BaseSettings):
     enable_rag_anything: bool = True
     rag_anything_parser: str = "mineru"
     pdf_ocr_enabled: bool = True
+    pdf_ocr_engine: str = "auto"
     pdf_ocr_lang: str = "vie+eng"
     pdf_ocr_scale: float = 2.0
     pdf_ocr_max_pages: int = 100
+    paddle_ocr_lang: str = "vi"
+    paddle_ocr_device: str = "cpu"
     pageindex_min_pages: int = 30
     pageindex_command: Optional[str] = None
     sync_ingestion_on_queue_failure: bool = False

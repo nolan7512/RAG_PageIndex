@@ -1,7 +1,9 @@
 import asyncio
 import json
+import tempfile
+from functools import lru_cache
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import get_settings
 from app.services.chunking import ContentBlock
@@ -131,9 +133,8 @@ def _ocr_pdf(document_id: str, path: Path, filename: str, page_count: int) -> Li
 
     try:
         import pypdfium2 as pdfium
-        import pytesseract
     except Exception as exc:
-        return [_text_block(document_id, 1, f"No extractable PDF text found. OCR parser unavailable: {exc}", filename)]
+        return [_text_block(document_id, 1, f"No extractable PDF text found. PDF renderer unavailable: {exc}", filename)]
 
     blocks: List[ContentBlock] = []
     try:
@@ -143,21 +144,7 @@ def _ocr_pdf(document_id: str, path: Path, filename: str, page_count: int) -> Li
             page = pdf[page_index]
             bitmap = page.render(scale=settings.pdf_ocr_scale)
             image = bitmap.to_pil()
-            text = pytesseract.image_to_string(image, lang=settings.pdf_ocr_lang).strip()
-            blocks.append(
-                ContentBlock(
-                    document_id=document_id,
-                    page_number=page_index + 1,
-                    block_type="text",
-                    content=text or "OCR produced no text for this page.",
-                    metadata={
-                        "parser": "tesseract-pdf-ocr",
-                        "source_file": filename,
-                        "ocr_lang": settings.pdf_ocr_lang,
-                        "ocr_scale": settings.pdf_ocr_scale,
-                    },
-                )
-            )
+            blocks.append(_ocr_image_to_block(document_id, image, filename, page_index + 1))
     except Exception as exc:
         return [_text_block(document_id, 1, f"No extractable PDF text found. OCR failed: {exc}", filename)]
 
@@ -172,6 +159,231 @@ def _ocr_pdf(document_id: str, path: Path, filename: str, page_count: int) -> Li
             )
         )
     return blocks or [_text_block(document_id, 1, "No extractable PDF text found. OCR produced no pages.", filename)]
+
+
+def _ocr_image_to_block(document_id: str, image, filename: str, page_number: int) -> ContentBlock:
+    if settings.pdf_ocr_engine in {"auto", "paddle"}:
+        paddle_result = _ocr_image_with_paddle(image)
+        if paddle_result is not None and (paddle_result["text"].strip() or settings.pdf_ocr_engine == "paddle"):
+            return ContentBlock(
+                document_id=document_id,
+                page_number=page_number,
+                block_type="text",
+                content=paddle_result["text"].strip() or "OCR produced no text for this page.",
+                metadata={
+                    "parser": "paddleocr",
+                    "source_file": filename,
+                    "ocr_lang": settings.paddle_ocr_lang,
+                    "ocr_device": settings.paddle_ocr_device,
+                    "ocr_scale": settings.pdf_ocr_scale,
+                    "ocr_confidence_avg": paddle_result["confidence_avg"],
+                    "ocr_confidence_min": paddle_result["confidence_min"],
+                    "ocr_line_count": len(paddle_result["lines"]),
+                    "ocr_lines": paddle_result["lines"],
+                },
+            )
+
+    if settings.pdf_ocr_engine == "paddle":
+        return _text_block(document_id, page_number, "PaddleOCR unavailable or produced no text.", filename, parser="paddleocr")
+    return _ocr_image_with_tesseract(document_id, image, filename, page_number)
+
+
+def _ocr_image_with_paddle(image) -> Optional[Dict[str, Any]]:
+    try:
+        ocr = _paddle_ocr_engine()
+    except Exception:
+        return None
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_image:
+        temp_path = Path(temp_image.name)
+    try:
+        image.save(temp_path)
+        result = _run_paddle_ocr(ocr, temp_path)
+        lines = _extract_paddle_lines(result)
+        text = "\n".join(line["text"] for line in lines if line["text"].strip())
+        confidences = [line["confidence"] for line in lines if line.get("confidence") is not None]
+        confidence_avg = round(sum(confidences) / len(confidences), 4) if confidences else None
+        confidence_min = round(min(confidences), 4) if confidences else None
+        return {
+            "text": text,
+            "confidence_avg": confidence_avg,
+            "confidence_min": confidence_min,
+            "lines": lines,
+        }
+    except Exception:
+        return None
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+@lru_cache(maxsize=1)
+def _paddle_ocr_engine():
+    from paddleocr import PaddleOCR
+
+    kwargs = {
+        "lang": settings.paddle_ocr_lang,
+        "device": settings.paddle_ocr_device,
+        "use_doc_orientation_classify": False,
+        "use_doc_unwarping": False,
+        "use_textline_orientation": False,
+    }
+    try:
+        return PaddleOCR(**kwargs)
+    except TypeError:
+        return PaddleOCR(lang=settings.paddle_ocr_lang, use_angle_cls=False)
+
+
+def _run_paddle_ocr(ocr, image_path: Path):
+    predict = getattr(ocr, "predict", None)
+    if predict is not None:
+        return predict(str(image_path))
+    return ocr.ocr(str(image_path), cls=False)
+
+
+def _extract_paddle_lines(result) -> List[Dict[str, Any]]:
+    lines: List[Dict[str, Any]] = []
+    for page_result in result or []:
+        if isinstance(page_result, dict):
+            lines.extend(_extract_paddle_lines_from_dict(page_result))
+        elif isinstance(page_result, list):
+            lines.extend(_extract_paddle_lines_from_legacy(page_result))
+        elif hasattr(page_result, "json"):
+            try:
+                lines.extend(_extract_paddle_lines_from_dict(page_result.json))
+            except Exception:
+                continue
+    return lines
+
+
+def _extract_paddle_lines_from_dict(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    texts = result.get("rec_texts") or []
+    raw_scores = _first_present(result, "rec_scores")
+    raw_polygons = _first_present(result, "rec_polys", "dt_polys", "rec_boxes")
+    scores = _to_plain_list(raw_scores) if raw_scores is not None else []
+    polygons = _to_plain_list(raw_polygons) if raw_polygons is not None else []
+    lines = []
+    for index, text in enumerate(texts):
+        confidence = _safe_float(scores[index]) if index < len(scores) else None
+        lines.append(
+            {
+                "text": str(text),
+                "confidence": confidence,
+                "bbox": _to_plain_list(polygons[index]) if index < len(polygons) else None,
+            }
+        )
+    return lines
+
+
+def _extract_paddle_lines_from_legacy(result: List[Any]) -> List[Dict[str, Any]]:
+    lines = []
+    for item in result:
+        if not isinstance(item, list) or len(item) < 2:
+            continue
+        text_score = item[1]
+        if not isinstance(text_score, (list, tuple)) or not text_score:
+            continue
+        lines.append(
+            {
+                "text": str(text_score[0]),
+                "confidence": _safe_float(text_score[1]) if len(text_score) > 1 else None,
+                "bbox": _to_plain_list(item[0]),
+            }
+        )
+    return lines
+
+
+def _ocr_image_with_tesseract(document_id: str, image, filename: str, page_number: int) -> ContentBlock:
+    try:
+        import pytesseract
+
+        text = pytesseract.image_to_string(image, lang=settings.pdf_ocr_lang).strip()
+        data = pytesseract.image_to_data(image, lang=settings.pdf_ocr_lang, output_type=pytesseract.Output.DICT)
+        lines, confidence_avg, confidence_min = _extract_tesseract_lines(data)
+        content = text or "OCR produced no text for this page."
+    except Exception as exc:
+        content = f"OCR unavailable for this page: {exc}"
+        lines, confidence_avg, confidence_min = [], None, None
+    return ContentBlock(
+        document_id=document_id,
+        page_number=page_number,
+        block_type="text",
+        content=content,
+        metadata={
+            "parser": "tesseract-pdf-ocr",
+            "source_file": filename,
+            "ocr_lang": settings.pdf_ocr_lang,
+            "ocr_scale": settings.pdf_ocr_scale,
+            "ocr_confidence_avg": confidence_avg,
+            "ocr_confidence_min": confidence_min,
+            "ocr_line_count": len(lines),
+            "ocr_lines": lines[:200],
+        },
+    )
+
+
+def _extract_tesseract_lines(data: Dict[str, List[Any]]) -> Tuple[List[Dict[str, Any]], Optional[float], Optional[float]]:
+    grouped: Dict[Tuple[int, int, int], Dict[str, Any]] = {}
+    confidences = []
+    for index, text in enumerate(data.get("text", [])):
+        clean_text = str(text).strip()
+        confidence = _safe_float(data.get("conf", [None])[index])
+        if not clean_text or confidence is None or confidence < 0:
+            continue
+        key = (
+            int(data.get("block_num", [0])[index]),
+            int(data.get("par_num", [0])[index]),
+            int(data.get("line_num", [0])[index]),
+        )
+        left = int(data.get("left", [0])[index])
+        top = int(data.get("top", [0])[index])
+        width = int(data.get("width", [0])[index])
+        height = int(data.get("height", [0])[index])
+        line = grouped.setdefault(key, {"words": [], "confidences": [], "bbox": [left, top, left + width, top + height]})
+        line["words"].append(clean_text)
+        line["confidences"].append(confidence / 100.0)
+        line["bbox"][0] = min(line["bbox"][0], left)
+        line["bbox"][1] = min(line["bbox"][1], top)
+        line["bbox"][2] = max(line["bbox"][2], left + width)
+        line["bbox"][3] = max(line["bbox"][3], top + height)
+        confidences.append(confidence / 100.0)
+
+    lines = [
+        {
+            "text": " ".join(value["words"]),
+            "confidence": round(sum(value["confidences"]) / len(value["confidences"]), 4),
+            "bbox": value["bbox"],
+        }
+        for value in grouped.values()
+        if value["words"]
+    ]
+    confidence_avg = round(sum(confidences) / len(confidences), 4) if confidences else None
+    confidence_min = round(min(confidences), 4) if confidences else None
+    return lines[:200], confidence_avg, confidence_min
+
+
+def _to_plain_list(value):
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    if isinstance(value, tuple):
+        return [_to_plain_list(item) for item in value]
+    if isinstance(value, list):
+        return [_to_plain_list(item) for item in value]
+    return value
+
+
+def _first_present(data: Dict[str, Any], *keys: str):
+    for key in keys:
+        value = data.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _safe_float(value) -> Optional[float]:
+    try:
+        return round(float(value), 4)
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_docx(document_id: str, path: Path, filename: str) -> List[ContentBlock]:

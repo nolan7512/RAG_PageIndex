@@ -16,9 +16,10 @@ RUN apt-get update \
         tesseract-ocr-vie \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements-rag.txt ./
+COPY requirements.txt requirements-rag.txt requirements-ocr.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir -r requirements-rag.txt || echo "Optional RAG-Anything install failed; fallback parsers remain available."
+RUN pip install --no-cache-dir -r requirements-ocr.txt || echo "Optional PaddleOCR install failed; Tesseract OCR remains available."
 
 COPY app ./app
 

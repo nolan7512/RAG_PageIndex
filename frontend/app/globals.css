@@ -511,6 +511,33 @@ button:focus-visible {
   line-height: 1.55;
 }
 
+.ocr-lines {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ocr-line {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 8px;
+  align-items: start;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.ocr-line span {
+  font-variant-numeric: tabular-nums;
+  color: var(--olive);
+}
+
+.ocr-line p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .query-row,
 .chat-input {
   display: flex;

@@ -1,0 +1,4 @@
+# Optional advanced OCR. Docker installs this best-effort; if it fails,
+# the app still uses the Tesseract fallback OCR path.
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0

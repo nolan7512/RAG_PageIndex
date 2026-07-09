@@ -492,19 +492,27 @@ function ReviewPanel({ review, loading, onClose }) {
 }
 
 function ParsedBlock({ block }) {
+  const confidenceAvg = formatConfidence(block.metadata?.ocr_confidence_avg);
+  const confidenceMin = formatConfidence(block.metadata?.ocr_confidence_min);
+  const ocrLines = Array.isArray(block.metadata?.ocr_lines) ? block.metadata.ocr_lines.slice(0, 6) : [];
   return (
     <article className="review-row">
       <div className="result-meta">
         <span>Trang {block.page_number}</span>
         <span>{block.block_type}</span>
         {block.metadata?.parser ? <span>{block.metadata.parser}</span> : null}
+        {confidenceAvg ? <span>avg {confidenceAvg}</span> : null}
+        {confidenceMin ? <span>min {confidenceMin}</span> : null}
+        {block.metadata?.ocr_line_count ? <span>{block.metadata.ocr_line_count} dòng OCR</span> : null}
       </div>
       <pre>{block.content}</pre>
+      {ocrLines.length ? <OcrLinePreview lines={ocrLines} /> : null}
     </article>
   );
 }
 
 function ReviewChunk({ chunk }) {
+  const confidenceAvg = formatConfidence(chunk.metadata?.ocr_confidence_avg);
   return (
     <article className="review-row">
       <div className="result-meta">
@@ -512,10 +520,32 @@ function ReviewChunk({ chunk }) {
         <span>Trang {chunk.page_number}</span>
         <span>{chunk.content_type}</span>
         <span>{chunk.token_count} token</span>
+        {chunk.metadata?.parser ? <span>{chunk.metadata.parser}</span> : null}
+        {confidenceAvg ? <span>avg {confidenceAvg}</span> : null}
       </div>
       <pre>{chunk.content}</pre>
     </article>
   );
+}
+
+function OcrLinePreview({ lines }) {
+  return (
+    <div className="ocr-lines" aria-label="OCR confidence preview">
+      {lines.map((line, index) => (
+        <div key={`${line.text}-${index}`} className="ocr-line">
+          <span>{formatConfidence(line.confidence) || "--"}</span>
+          <p>{line.text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function formatConfidence(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "";
+  }
+  return `${Math.round(Number(value) * 100)}%`;
 }
 
 function StatusBadge({ status }) {
