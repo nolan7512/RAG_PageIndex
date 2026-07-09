@@ -21,7 +21,7 @@ On the Ubuntu server, copy this project folder to the server, then run:
 
 ```bash
 chmod +x scripts/setup-ubuntu.sh
-OPENAI_API_KEY="sk-..." PUBLIC_HOST="your-server-ip-or-domain" ./scripts/setup-ubuntu.sh
+PUBLIC_HOST="your-server-ip-or-domain" ./scripts/setup-ubuntu.sh
 ```
 
 For a dry internal demo without an OpenAI key:
@@ -31,6 +31,8 @@ USE_FAKE_OPENAI=true PUBLIC_HOST="your-server-ip-or-domain" ./scripts/setup-ubun
 ```
 
 The script installs Docker Engine and the Compose plugin, creates `/opt/rag-pageindex`, generates `.env` secrets if needed, opens UFW ports `3111` and `8111` when UFW is active, then runs `docker compose up --build -d`.
+
+During setup, the installer asks which API provider to use, lets you paste the API key, checks the `/models` endpoint when available, and lets you choose chat/embedding models. Supported quick choices are OpenAI, Gemini OpenAI-compatible, OpenRouter, Together AI, custom OpenAI-compatible endpoint, or fake demo mode.
 
 1. Copy environment settings:
 

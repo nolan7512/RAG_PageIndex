@@ -5,12 +5,18 @@ APP_NAME="rag-pageindex"
 DEFAULT_APP_DIR="/opt/rag-pageindex"
 APP_DIR="${APP_DIR:-$DEFAULT_APP_DIR}"
 PUBLIC_HOST="${PUBLIC_HOST:-}"
+API_PROVIDER="${API_PROVIDER:-}"
 OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
+OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-}"
+OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-}"
+OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 USE_FAKE_OPENAI="${USE_FAKE_OPENAI:-false}"
 ENABLE_RAG_ANYTHING="${ENABLE_RAG_ANYTHING:-true}"
 PAGEINDEX_MIN_PAGES="${PAGEINDEX_MIN_PAGES:-30}"
+ASSUME_YES="${ASSUME_YES:-false}"
 
 log() {
   printf "\n\033[1;32m[%s]\033[0m %s\n" "$APP_NAME" "$*"
@@ -47,6 +53,64 @@ as_root_prefix() {
 
 random_hex() {
   openssl rand -hex "$1"
+}
+
+is_interactive() {
+  [[ -t 0 && "$ASSUME_YES" != "true" ]]
+}
+
+prompt_text() {
+  local prompt="$1"
+  local default_value="${2:-}"
+  local answer
+  if ! is_interactive; then
+    printf "%s" "$default_value"
+    return
+  fi
+  if [[ -n "$default_value" ]]; then
+    read -r -p "${prompt} [${default_value}]: " answer
+    printf "%s" "${answer:-$default_value}"
+  else
+    read -r -p "${prompt}: " answer
+    printf "%s" "$answer"
+  fi
+}
+
+prompt_secret() {
+  local prompt="$1"
+  local answer
+  if ! is_interactive; then
+    printf "%s" "${OPENAI_API_KEY:-}"
+    return
+  fi
+  read -r -s -p "${prompt}: " answer
+  printf "\n" >&2
+  printf "%s" "$answer"
+}
+
+prompt_menu() {
+  local prompt="$1"
+  shift
+  local options=("$@")
+  local answer
+  if ! is_interactive; then
+    printf "1"
+    return
+  fi
+  printf "\n%s\n" "$prompt"
+  local index=1
+  for option in "${options[@]}"; do
+    printf "  %s) %s\n" "$index" "$option"
+    index=$((index + 1))
+  done
+  while true; do
+    read -r -p "Choose [1-${#options[@]}]: " answer
+    if [[ "$answer" =~ ^[0-9]+$ ]] && (( answer >= 1 && answer <= ${#options[@]} )); then
+      printf "%s" "$answer"
+      return
+    fi
+    warn "Invalid choice."
+  done
 }
 
 detect_public_host() {
@@ -177,7 +241,6 @@ ensure_env_file() {
   fi
   set_env_value FRONTEND_ORIGIN "$frontend_origin"
   set_env_value NEXT_PUBLIC_API_BASE_URL "$api_base"
-  set_env_value USE_FAKE_OPENAI "$USE_FAKE_OPENAI"
   set_env_value ENABLE_RAG_ANYTHING "$ENABLE_RAG_ANYTHING"
   set_env_value PAGEINDEX_MIN_PAGES "$PAGEINDEX_MIN_PAGES"
 
@@ -185,14 +248,204 @@ ensure_env_file() {
   current_pg_password="$(get_env_value POSTGRES_PASSWORD)"
   set_env_value DATABASE_URL "postgresql+psycopg://rag:${current_pg_password}@postgres:5432/rag_pageindex"
 
-  if [[ -n "$OPENAI_API_KEY" ]]; then
-    set_env_value OPENAI_API_KEY "$OPENAI_API_KEY"
-  elif [[ "$USE_FAKE_OPENAI" != "true" && -z "$(get_env_value OPENAI_API_KEY)" ]]; then
-    warn "OPENAI_API_KEY is empty. The app will run, but ingestion/search/chat will fail unless you set OPENAI_API_KEY or run with USE_FAKE_OPENAI=true."
-  fi
+  configure_api_provider
 
   printf "%s" "$(get_env_value ADMIN_PASSWORD)" > .admin-password.generated
   chmod 600 .admin-password.generated
+}
+
+configure_api_provider() {
+  local provider="${API_PROVIDER}"
+  if [[ -z "$provider" && is_interactive ]]; then
+    local choice
+    choice="$(prompt_menu "Select AI API provider" \
+      "OpenAI" \
+      "Google Gemini OpenAI-compatible" \
+      "OpenRouter OpenAI-compatible" \
+      "Together AI OpenAI-compatible" \
+      "Custom OpenAI-compatible endpoint" \
+      "Demo mode without API key")"
+    case "$choice" in
+      1) provider="openai" ;;
+      2) provider="gemini" ;;
+      3) provider="openrouter" ;;
+      4) provider="together" ;;
+      5) provider="custom" ;;
+      6) provider="fake" ;;
+    esac
+  fi
+  provider="${provider:-openai}"
+
+  case "$provider" in
+    openai)
+      OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
+      OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-gpt-5.4-mini}"
+      OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
+      OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-1536}"
+      ;;
+    gemini)
+      OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}"
+      OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-gemini-2.5-flash}"
+      OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-004}"
+      OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-768}"
+      ;;
+    openrouter)
+      OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}"
+      OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-google/gemini-2.5-flash}"
+      OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
+      OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-1536}"
+      warn "OpenRouter may not provide embeddings for every account/model. If ingestion fails, use OpenAI/Gemini embeddings or a custom embedding-compatible endpoint."
+      ;;
+    together)
+      OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.together.xyz/v1}"
+      OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo}"
+      OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-BAAI/bge-large-en-v1.5}"
+      OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-1024}"
+      ;;
+    custom)
+      OPENAI_BASE_URL="${OPENAI_BASE_URL:-$(prompt_text "OpenAI-compatible base URL" "$(get_env_value OPENAI_BASE_URL)")}"
+      OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-$(prompt_text "Default chat model" "$(get_env_value OPENAI_CHAT_MODEL)")}"
+      OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-$(prompt_text "Default embedding model" "$(get_env_value OPENAI_EMBEDDING_MODEL)")}"
+      OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-$(prompt_text "Embedding dimensions" "$(get_env_value OPENAI_EMBEDDING_DIMENSIONS)")}"
+      ;;
+    fake)
+      USE_FAKE_OPENAI="true"
+      OPENAI_BASE_URL=""
+      OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-fake-chat}"
+      OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-fake-embedding}"
+      OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-1536}"
+      ;;
+    *)
+      die "Unsupported API_PROVIDER '${provider}'. Use openai, gemini, openrouter, together, custom, or fake."
+      ;;
+  esac
+
+  if [[ "$provider" != "fake" ]]; then
+    local existing_key
+    existing_key="$(get_env_value OPENAI_API_KEY)"
+    if [[ -z "$OPENAI_API_KEY" && is_interactive ]]; then
+      if [[ -n "$existing_key" ]]; then
+        local keep
+        keep="$(prompt_text "Existing API key found. Keep it? (Y/n)" "Y")"
+        if [[ "$keep" =~ ^[Nn] ]]; then
+          OPENAI_API_KEY="$(prompt_secret "Paste API key")"
+        else
+          OPENAI_API_KEY="$existing_key"
+        fi
+      else
+        OPENAI_API_KEY="$(prompt_secret "Paste API key")"
+      fi
+    fi
+    OPENAI_API_KEY="${OPENAI_API_KEY:-$existing_key}"
+    if [[ -z "$OPENAI_API_KEY" ]]; then
+      warn "API key is empty. The app will start, but ingestion/search/chat will fail until OPENAI_API_KEY is set."
+    else
+      check_api_and_choose_models "$provider"
+    fi
+  fi
+
+  set_env_value API_PROVIDER "$provider"
+  set_env_value USE_FAKE_OPENAI "$USE_FAKE_OPENAI"
+  set_env_value OPENAI_API_KEY "$OPENAI_API_KEY"
+  set_env_value OPENAI_BASE_URL "$OPENAI_BASE_URL"
+  set_env_value OPENAI_CHAT_MODEL "$OPENAI_CHAT_MODEL"
+  set_env_value OPENAI_EMBEDDING_MODEL "$OPENAI_EMBEDDING_MODEL"
+  set_env_value OPENAI_EMBEDDING_DIMENSIONS "$OPENAI_EMBEDDING_DIMENSIONS"
+}
+
+check_api_and_choose_models() {
+  local provider="$1"
+  local base_url="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+  local models_url="${base_url%/}/models"
+  local response_file
+  local status_file
+  response_file="$(mktemp)"
+  status_file="$(mktemp)"
+
+  log "Checking API connection for ${provider}"
+  local http_code
+  http_code="$(curl -sS -L \
+    -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -o "$response_file" \
+    -w "%{http_code}" \
+    "$models_url" 2>"$status_file" || true)"
+
+  if [[ "$http_code" =~ ^2 ]]; then
+    log "API key check passed"
+    if command -v python3 >/dev/null 2>&1; then
+      choose_models_from_response "$response_file"
+    fi
+  else
+    warn "Could not verify API key at ${models_url}. HTTP ${http_code}. Continuing with default model settings."
+    if [[ -s "$status_file" ]]; then
+      warn "$(cat "$status_file")"
+    fi
+  fi
+
+  rm -f "$response_file" "$status_file"
+}
+
+choose_models_from_response() {
+  local response_file="$1"
+  local chat_models_file
+  local embedding_models_file
+  chat_models_file="$(mktemp)"
+  embedding_models_file="$(mktemp)"
+
+  python3 - "$response_file" "$chat_models_file" "$embedding_models_file" <<'PY'
+import json
+import sys
+
+response_path, chat_path, embedding_path = sys.argv[1:4]
+try:
+    data = json.load(open(response_path, encoding="utf-8"))
+except Exception:
+    data = {}
+
+items = data.get("data", data if isinstance(data, list) else [])
+ids = []
+for item in items:
+    if isinstance(item, dict):
+        mid = item.get("id") or item.get("name")
+    else:
+        mid = str(item)
+    if mid:
+        ids.append(str(mid))
+
+chat_markers = ("gpt", "gemini", "claude", "llama", "qwen", "deepseek", "mistral", "mixtral")
+embed_markers = ("embed", "embedding", "bge", "e5", "gte")
+chat = [mid for mid in ids if any(marker in mid.lower() for marker in chat_markers)]
+embedding = [mid for mid in ids if any(marker in mid.lower() for marker in embed_markers)]
+
+open(chat_path, "w", encoding="utf-8").write("\n".join(chat[:30]))
+open(embedding_path, "w", encoding="utf-8").write("\n".join(embedding[:30]))
+PY
+
+  if is_interactive && [[ -s "$chat_models_file" ]]; then
+    OPENAI_CHAT_MODEL="$(choose_model_from_file "Select chat model" "$chat_models_file" "$OPENAI_CHAT_MODEL")"
+  fi
+  if is_interactive && [[ -s "$embedding_models_file" ]]; then
+    OPENAI_EMBEDDING_MODEL="$(choose_model_from_file "Select embedding model" "$embedding_models_file" "$OPENAI_EMBEDDING_MODEL")"
+    OPENAI_EMBEDDING_DIMENSIONS="$(prompt_text "Embedding dimensions for ${OPENAI_EMBEDDING_MODEL}" "$OPENAI_EMBEDDING_DIMENSIONS")"
+  fi
+
+  rm -f "$chat_models_file" "$embedding_models_file"
+}
+
+choose_model_from_file() {
+  local prompt="$1"
+  local file="$2"
+  local default_model="$3"
+  mapfile -t models < "$file"
+  models+=("Keep default: ${default_model}")
+  local choice
+  choice="$(prompt_menu "$prompt" "${models[@]}")"
+  if (( choice == ${#models[@]} )); then
+    printf "%s" "$default_model"
+  else
+    printf "%s" "${models[$((choice - 1))]}"
+  fi
 }
 
 get_env_value() {
@@ -251,6 +504,9 @@ API docs:          http://${PUBLIC_HOST}:8111/docs
 
 Admin email:       $(get_env_value ADMIN_EMAIL)
 Admin password:    ${admin_password}
+API provider:      $(get_env_value API_PROVIDER)
+Chat model:        $(get_env_value OPENAI_CHAT_MODEL)
+Embedding model:   $(get_env_value OPENAI_EMBEDDING_MODEL)
 
 Useful commands:
   cd ${APP_DIR}

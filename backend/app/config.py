@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     admin_password: str = "change-me-now"
 
     openai_api_key: Optional[str] = None
+    api_provider: str = "openai"
     openai_base_url: Optional[str] = None
     openai_chat_model: str = "gpt-5.4-mini"
     openai_embedding_model: str = "text-embedding-3-small"

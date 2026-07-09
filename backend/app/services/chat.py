@@ -86,7 +86,7 @@ User question:
         client_kwargs["base_url"] = settings.openai_base_url
     client = OpenAI(**client_kwargs)
 
-    if hasattr(client, "responses"):
+    if settings.api_provider == "openai" and not settings.openai_base_url and hasattr(client, "responses"):
         response = client.responses.create(
             model=settings.openai_chat_model,
             input=[
