@@ -5,7 +5,9 @@ import {
   ArrowDownToLine,
   Bot,
   CheckCircle2,
+  Eye,
   FileText,
+  Layers3,
   Loader2,
   LogOut,
   MessageSquareText,
@@ -118,6 +120,8 @@ function Workbench({ user, onLogout }) {
   const [chatBusy, setChatBusy] = useState(false);
   const [conversationId, setConversationId] = useState(null);
   const [chatLog, setChatLog] = useState([]);
+  const [review, setReview] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const fileInputRef = useRef(null);
 
   const readyCount = useMemo(() => documents.filter((document) => document.status === "ready").length, [documents]);
@@ -167,9 +171,22 @@ function Workbench({ user, onLogout }) {
     setNotice("");
     try {
       await apiFetch(`/documents/${documentId}`, { method: "DELETE" });
+      setReview((current) => (current?.document?.id === documentId ? null : current));
       await loadDocuments();
     } catch (err) {
       setNotice(err.message);
+    }
+  }
+
+  async function openReview(documentId) {
+    setReviewLoading(true);
+    setNotice("");
+    try {
+      setReview(await apiFetch(`/documents/${documentId}/review`));
+    } catch (err) {
+      setNotice(err.message);
+    } finally {
+      setReviewLoading(false);
     }
   }
 
@@ -250,6 +267,8 @@ function Workbench({ user, onLogout }) {
           loading={documentsLoading}
           onDelete={removeDocument}
           onDownload={(id) => window.open(downloadUrl(id), "_blank", "noopener,noreferrer")}
+          onReview={openReview}
+          selectedDocumentId={review?.document?.id}
         />
 
         <button className="ghost-button logout" onClick={logout}>
@@ -273,6 +292,8 @@ function Workbench({ user, onLogout }) {
         </header>
 
         <div className="work-grid">
+          <ReviewPanel review={review} loading={reviewLoading} onClose={() => setReview(null)} />
+
           <section className="tool-panel search-panel" aria-labelledby="search-title">
             <div className="panel-heading">
               <Search size={17} aria-hidden="true" />
@@ -328,7 +349,7 @@ function Workbench({ user, onLogout }) {
   );
 }
 
-function DocumentList({ documents, loading, onDelete, onDownload }) {
+function DocumentList({ documents, loading, onDelete, onDownload, onReview, selectedDocumentId }) {
   if (loading) {
     return (
       <div className="document-list">
@@ -346,7 +367,7 @@ function DocumentList({ documents, loading, onDelete, onDownload }) {
   return (
     <div className="document-list">
       {documents.map((document) => (
-        <article className="document-row" key={document.id}>
+        <article className={`document-row ${selectedDocumentId === document.id ? "selected" : ""}`} key={document.id}>
           <div className="file-icon">
             <FileText size={17} aria-hidden="true" />
           </div>
@@ -359,6 +380,9 @@ function DocumentList({ documents, loading, onDelete, onDownload }) {
           </div>
           <StatusBadge status={document.status} />
           <div className="row-actions">
+            <button className="icon-button" onClick={() => onReview(document.id)} title="Review OCR/RAG">
+              <Eye size={15} aria-hidden="true" />
+            </button>
             <button className="icon-button" onClick={() => onDownload(document.id)} title="Download">
               <ArrowDownToLine size={15} aria-hidden="true" />
             </button>
@@ -369,6 +393,128 @@ function DocumentList({ documents, loading, onDelete, onDownload }) {
         </article>
       ))}
     </div>
+  );
+}
+
+function ReviewPanel({ review, loading, onClose }) {
+  if (loading) {
+    return (
+      <section className="tool-panel review-panel" aria-labelledby="review-title">
+        <div className="panel-heading">
+          <Loader2 className="spin" size={17} aria-hidden="true" />
+          <h2 id="review-title">Review OCR / RAG</h2>
+        </div>
+        <div className="review-empty">
+          <div className="skeleton" />
+        </div>
+      </section>
+    );
+  }
+
+  if (!review) {
+    return (
+      <section className="tool-panel review-panel compact-review" aria-labelledby="review-title">
+        <div className="panel-heading">
+          <Eye size={17} aria-hidden="true" />
+          <h2 id="review-title">Review OCR / RAG</h2>
+        </div>
+        <div className="review-empty">
+          <EmptyState text="Chọn biểu tượng mắt ở một file để xem PDF gốc và text mà parser/OCR đã trích xuất." />
+        </div>
+      </section>
+    );
+  }
+
+  const isPdf = review.document.mime_type?.includes("pdf") || review.document.filename.toLowerCase().endsWith(".pdf");
+  const firstBlocks = review.parsed_blocks.slice(0, 80);
+  const firstChunks = review.chunks.slice(0, 80);
+
+  return (
+    <section className="tool-panel review-panel" aria-labelledby="review-title">
+      <div className="panel-heading review-heading">
+        <div>
+          <div className="heading-line">
+            <Eye size={17} aria-hidden="true" />
+            <h2 id="review-title">Review OCR / RAG</h2>
+          </div>
+          <p>{review.document.filename}</p>
+        </div>
+        <button className="ghost-button" onClick={onClose}>
+          Đóng
+        </button>
+      </div>
+
+      <div className="review-summary" aria-label="Parser summary">
+        <span>{review.document.page_count || 0} trang</span>
+        <span>{review.parsed_block_count} block parse</span>
+        <span>{review.chunk_count} chunk</span>
+        <span>{review.total_tokens} token</span>
+        <span>{review.parser_names.length ? review.parser_names.join(", ") : "parser chưa rõ"}</span>
+      </div>
+
+      <div className="review-grid">
+        <div className="pdf-preview">
+          {isPdf ? (
+            <iframe title={`Preview ${review.document.filename}`} src={downloadUrl(review.document.id)} />
+          ) : (
+            <EmptyState text="Preview gốc hiện ưu tiên PDF. Dùng nút download để xem file Office/ảnh." />
+          )}
+        </div>
+
+        <div className="extraction-review">
+          <div className="review-section-title">
+            <Layers3 size={16} aria-hidden="true" />
+            <strong>Parsed blocks</strong>
+          </div>
+          <div className="review-list">
+            {firstBlocks.length ? (
+              firstBlocks.map((block, index) => <ParsedBlock key={`${block.page_number}-${index}`} block={block} />)
+            ) : (
+              <EmptyState text="Chưa có parsed artifact. File có thể đang xử lý hoặc parser lỗi." />
+            )}
+          </div>
+
+          <div className="review-section-title">
+            <FileText size={16} aria-hidden="true" />
+            <strong>Indexed chunks</strong>
+          </div>
+          <div className="review-list chunks">
+            {firstChunks.length ? (
+              firstChunks.map((chunk) => <ReviewChunk key={chunk.id} chunk={chunk} />)
+            ) : (
+              <EmptyState text="Chưa có chunk đã index." />
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ParsedBlock({ block }) {
+  return (
+    <article className="review-row">
+      <div className="result-meta">
+        <span>Trang {block.page_number}</span>
+        <span>{block.block_type}</span>
+        {block.metadata?.parser ? <span>{block.metadata.parser}</span> : null}
+      </div>
+      <pre>{block.content}</pre>
+    </article>
+  );
+}
+
+function ReviewChunk({ chunk }) {
+  return (
+    <article className="review-row">
+      <div className="result-meta">
+        <span>Chunk {chunk.chunk_index}</span>
+        <span>Trang {chunk.page_number}</span>
+        <span>{chunk.content_type}</span>
+        <span>{chunk.token_count} token</span>
+      </div>
+      <pre>{chunk.content}</pre>
+    </article>
   );
 }
 

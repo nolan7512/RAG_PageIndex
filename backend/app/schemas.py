@@ -40,6 +40,33 @@ class DocumentStatusOut(BaseModel):
     job_status: Optional[str] = None
 
 
+class ParsedBlockOut(BaseModel):
+    page_number: int
+    block_type: str
+    content: str
+    metadata: Dict[str, Any]
+
+
+class ReviewChunkOut(BaseModel):
+    id: str
+    page_number: int
+    chunk_index: int
+    content_type: str
+    token_count: int
+    content: str
+    metadata: Dict[str, Any]
+
+
+class DocumentReviewOut(BaseModel):
+    document: DocumentOut
+    parsed_blocks: List[ParsedBlockOut]
+    chunks: List[ReviewChunkOut]
+    parsed_block_count: int
+    chunk_count: int
+    total_tokens: int
+    parser_names: List[str]
+
+
 class CitationOut(BaseModel):
     document_id: str
     filename: str

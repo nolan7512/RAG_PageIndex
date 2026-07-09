@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from anyio import to_thread
@@ -8,11 +9,11 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Document, IngestionJob, User
+from app.models import Document, DocumentChunk, IngestionJob, User
 from app.queue import enqueue_ingestion
-from app.schemas import DocumentOut, DocumentStatusOut
+from app.schemas import DocumentOut, DocumentReviewOut, DocumentStatusOut, ParsedBlockOut, ReviewChunkOut
 from app.services.permissions import can_access_document
-from app.services.storage import original_file_path, remove_document_files
+from app.services.storage import document_artifact_dir, original_file_path, remove_document_files
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -134,6 +135,50 @@ def download_document(document_id: str, db: Session = Depends(get_db), current_u
     return FileResponse(document.storage_path, media_type=document.mime_type, filename=document.filename)
 
 
+@router.get("/{document_id}/review", response_model=DocumentReviewOut)
+def review_document(document_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    document = db.query(Document).filter(Document.id == document_id).one_or_none()
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not can_access_document(current_user, document):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    parsed_blocks = _load_parsed_blocks(document.id)
+    chunks = (
+        db.query(DocumentChunk)
+        .filter(DocumentChunk.document_id == document.id)
+        .order_by(DocumentChunk.page_number.asc(), DocumentChunk.chunk_index.asc())
+        .all()
+    )
+    parser_names = sorted(
+        {
+            str(block.metadata.get("parser"))
+            for block in parsed_blocks
+            if block.metadata and block.metadata.get("parser")
+        }
+    )
+    return DocumentReviewOut(
+        document=document,
+        parsed_blocks=parsed_blocks,
+        chunks=[
+            ReviewChunkOut(
+                id=chunk.id,
+                page_number=chunk.page_number,
+                chunk_index=chunk.chunk_index,
+                content_type=chunk.content_type,
+                token_count=chunk.token_count,
+                content=chunk.content,
+                metadata=chunk.metadata_json or {},
+            )
+            for chunk in chunks
+        ],
+        parsed_block_count=len(parsed_blocks),
+        chunk_count=len(chunks),
+        total_tokens=sum(chunk.token_count for chunk in chunks),
+        parser_names=parser_names,
+    )
+
+
 @router.delete("/{document_id}")
 def delete_document(document_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     document = db.query(Document).filter(Document.id == document_id).one_or_none()
@@ -145,3 +190,29 @@ def delete_document(document_id: str, db: Session = Depends(get_db), current_use
     db.commit()
     remove_document_files(document.id)
     return {"ok": True}
+
+
+def _load_parsed_blocks(document_id: str) -> list[ParsedBlockOut]:
+    parsed_path = document_artifact_dir(document_id) / "parsed.json"
+    if not parsed_path.exists():
+        return []
+    try:
+        data = json.loads(parsed_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    blocks = []
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        blocks.append(
+            ParsedBlockOut(
+                page_number=int(item.get("page_number") or 1),
+                block_type=str(item.get("block_type") or item.get("type") or "text"),
+                content=content,
+                metadata=item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+            )
+        )
+    return blocks

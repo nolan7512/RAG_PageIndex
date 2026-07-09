@@ -88,6 +88,7 @@ npm run build
 - RAG-Anything is attempted first when installed and enabled. If it is unavailable or fails for a file, the worker falls back to local parsers for PDF, DOCX, PPTX, XLSX, TXT, and images.
 - PageIndex is attempted for long documents when `PAGEINDEX_COMMAND` is configured. Otherwise the worker creates a lightweight page tree from parsed chunks so the API contract still works.
 - Vietnamese retrieval now includes Unicode normalization and diacritic-insensitive lexical fallback. See `docs/VIETNAMESE_RAG_PLAN.md`.
+- Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.
 - API keys, uploaded files, and generated artifacts are intentionally excluded from git.
 
 ## Clear and Reinstall on Ubuntu
