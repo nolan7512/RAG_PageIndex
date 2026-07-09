@@ -1,8 +1,9 @@
 import hashlib
 import math
+import os
 from typing import Iterable, List
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
 from app.config import get_settings
 
@@ -15,12 +16,20 @@ class OpenAIUnavailable(RuntimeError):
 
 
 def _client() -> OpenAI:
+    _clear_blank_openai_base_url_env()
     kwargs = {}
     if settings.openai_api_key:
         kwargs["api_key"] = settings.openai_api_key
-    if settings.openai_base_url:
-        kwargs["base_url"] = settings.openai_base_url
+    base_url = (settings.openai_base_url or "").strip()
+    if base_url:
+        kwargs["base_url"] = base_url
     return OpenAI(**kwargs)
+
+
+def _clear_blank_openai_base_url_env() -> None:
+    for name in ("OPENAI_BASE_URL", "OPENAI_API_BASE"):
+        if os.environ.get(name, "").strip() == "":
+            os.environ.pop(name, None)
 
 
 def embed_texts(texts: Iterable[str]) -> List[List[float]]:
@@ -32,12 +41,15 @@ def embed_texts(texts: Iterable[str]) -> List[List[float]]:
     if not settings.openai_api_key:
         raise OpenAIUnavailable("OPENAI_API_KEY is not configured")
 
-    response = _client().embeddings.create(
-        model=settings.openai_embedding_model,
-        input=text_list,
-        dimensions=settings.openai_embedding_dimensions,
-        encoding_format="float",
-    )
+    try:
+        response = _client().embeddings.create(
+            model=settings.openai_embedding_model,
+            input=text_list,
+            dimensions=settings.openai_embedding_dimensions,
+            encoding_format="float",
+        )
+    except OpenAIError as exc:
+        raise OpenAIUnavailable(f"OpenAI embedding request failed: {exc}") from exc
     return [item.embedding for item in response.data]
 
 

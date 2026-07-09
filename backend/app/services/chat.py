@@ -1,12 +1,12 @@
 from typing import List, Tuple
 
-from openai import OpenAI
+from openai import OpenAIError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Conversation, ConversationMessage, User
 from app.services.chunking import excerpt
-from app.services.embeddings import OpenAIUnavailable
+from app.services.embeddings import OpenAIUnavailable, _client
 from app.services.retrieval import RetrievedChunk, retrieve_chunks
 
 
@@ -81,32 +81,31 @@ User question:
 {message}
 """
 
-    client_kwargs = {"api_key": settings.openai_api_key}
-    if settings.openai_base_url:
-        client_kwargs["base_url"] = settings.openai_base_url
-    client = OpenAI(**client_kwargs)
+    client = _client()
+    try:
+        if settings.api_provider == "openai" and not settings.openai_base_url and hasattr(client, "responses"):
+            response = client.responses.create(
+                model=settings.openai_chat_model,
+                input=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=settings.openai_temperature,
+            )
+            text = getattr(response, "output_text", None)
+            if text:
+                return text.strip()
 
-    if settings.api_provider == "openai" and not settings.openai_base_url and hasattr(client, "responses"):
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model=settings.openai_chat_model,
-            input=[
+            messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=settings.openai_temperature,
         )
-        text = getattr(response, "output_text", None)
-        if text:
-            return text.strip()
-
-    response = client.chat.completions.create(
-        model=settings.openai_chat_model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=settings.openai_temperature,
-    )
+    except OpenAIError as exc:
+        raise OpenAIUnavailable(f"OpenAI chat request failed: {exc}") from exc
     return response.choices[0].message.content.strip()
 
 

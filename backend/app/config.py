@@ -46,6 +46,13 @@ class Settings(BaseSettings):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
+    @field_validator("openai_api_key", "openai_base_url", "pageindex_command", mode="before")
+    @classmethod
+    def blank_string_to_none(cls, value):
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @property
     def all_cors_origins(self) -> List[str]:
         origins = list(self.cors_origins)
