@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List
 
+from app.services.vietnamese import normalize_vietnamese_text
+
 try:
     import tiktoken
 except ImportError:  # pragma: no cover - dependency exists in normal installs
@@ -73,7 +75,7 @@ def blocks_to_chunks(
     chunks: List[Chunk] = []
     index = 0
     for block in blocks:
-        content = block.content.strip()
+        content = normalize_vietnamese_text(block.content)
         if not content:
             continue
         for piece in _split_long_text(content, max_tokens=max_tokens):

@@ -2,7 +2,6 @@ import math
 from dataclasses import dataclass
 from typing import List
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -10,6 +9,7 @@ from app.models import Document, DocumentChunk, PageIndex, User
 from app.services.chunking import excerpt
 from app.services.embeddings import embed_text
 from app.services.pageindex import page_boosts_from_tree
+from app.services.vietnamese import lexical_score, tokenize_vietnamese_query
 
 
 settings = get_settings()
@@ -97,7 +97,7 @@ def _semantic_search(db: Session, user: User, query_embedding: List[float], cand
 
 
 def _keyword_search(db: Session, user: User, query: str, candidates: int) -> List[RetrievedChunk]:
-    terms = [term.strip() for term in query.split() if len(term.strip()) >= 3]
+    terms = tokenize_vietnamese_query(query)
     if not terms:
         return []
 
@@ -108,25 +108,15 @@ def _keyword_search(db: Session, user: User, query: str, candidates: int) -> Lis
     )
     if user.role != "admin":
         rows = rows.filter(Document.uploaded_by == user.id)
-    rows = rows.filter(or_(*[DocumentChunk.content.ilike(f"%{term}%") for term in terms]))
-    rows = rows.limit(candidates).all()
-    return [
-        RetrievedChunk(
-            chunk=chunk,
-            document=document,
-            score=min(0.86, 0.48 + _keyword_score(query, chunk.content)),
-        )
-        for chunk, document in rows
-    ]
+    rows = rows.limit(max(candidates * 20, 200)).all()
 
-
-def _keyword_score(query: str, content: str) -> float:
-    query_terms = [term.lower() for term in query.split() if len(term) >= 3]
-    content_lower = content.lower()
-    if not query_terms:
-        return 0.0
-    matches = sum(1 for term in query_terms if term in content_lower)
-    return matches / len(query_terms) * 0.3
+    results = []
+    for chunk, document in rows:
+        score = lexical_score(query, chunk.content)
+        if score > 0:
+            results.append(RetrievedChunk(chunk=chunk, document=document, score=min(0.88, 0.42 + score * 0.46)))
+    results.sort(key=lambda item: item.score, reverse=True)
+    return results[:candidates]
 
 
 def _apply_pageindex_boosts(db: Session, query: str, results: List[RetrievedChunk]) -> None:
