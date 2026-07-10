@@ -11,7 +11,7 @@ from app.database import Base
 
 
 settings = get_settings()
-EmbeddingColumnType = JSON if settings.is_sqlite else Vector(settings.openai_embedding_dimensions)
+EmbeddingColumnType = JSON if settings.is_sqlite else Vector(settings.embedding_dimensions)
 
 
 def new_id() -> str:

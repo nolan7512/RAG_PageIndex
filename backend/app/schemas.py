@@ -88,6 +88,8 @@ class SearchResultOut(BaseModel):
     chunk_id: str
     excerpt: str
     score: float
+    lexical_score: float = 0.0
+    rerank_score: float = 0.0
 
 
 class ChatRequest(BaseModel):

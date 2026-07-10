@@ -620,6 +620,7 @@ function SearchResult({ result, onOpenPage }) {
           Trang {result.page_number}
         </button>
         <span>{Math.round(result.score * 100)}%</span>
+        {result.rerank_score ? <span>rerank {Math.round(result.rerank_score * 100)}%</span> : null}
       </div>
       <p>{result.excerpt}</p>
     </article>

@@ -75,7 +75,14 @@ def ingest_document(document_id: str) -> None:
             "embedding",
             "done",
             f"Created {len(embeddings)} embeddings.",
-            {"embedding_count": len(embeddings), "model": settings.openai_embedding_model},
+            {
+                "embedding_count": len(embeddings),
+                "provider": settings.embedding_provider,
+                "model": settings.local_embedding_model
+                if settings.embedding_provider == "local_bge_m3"
+                else settings.openai_embedding_model,
+                "dimensions": settings.embedding_dimensions,
+            },
         )
 
         db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()

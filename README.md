@@ -91,6 +91,7 @@ npm run build
 - PageIndex is attempted for long documents when `PAGEINDEX_COMMAND` is configured. Otherwise the worker creates a lightweight page tree from parsed chunks so the API contract still works.
 - Vietnamese retrieval now includes Unicode normalization and diacritic-insensitive lexical fallback. See `docs/VIETNAMESE_RAG_PLAN.md`.
 - The BGE-M3, hybrid search, OpenSearch, and reranker upgrade path is tracked in `docs/SELF_HOSTED_RETRIEVAL_PLAN.md`.
+- Self-hosted BGE-M3 embeddings and `bge-reranker-v2-m3` are opt-in with `EMBEDDING_PROVIDER=local_bge_m3` and `RERANKER_PROVIDER=local_bge_m3`. Switching from OpenAI embeddings requires a clean re-index because vector dimensions change.
 - Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.
 - API keys, uploaded files, and generated artifacts are intentionally excluded from git.
 

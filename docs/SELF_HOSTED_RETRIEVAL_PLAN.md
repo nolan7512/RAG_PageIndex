@@ -25,21 +25,59 @@ BGE-M3 uses 1024-dimensional embeddings. Switching from OpenAI `text-embedding-3
 
 For the current 1-2 user internal server, start with CPU inference only if latency is acceptable. If ingestion becomes slow, move embedding/reranker into a separate service and batch requests.
 
+## Current Implementation
+
+The app now includes the local adapters, but they are opt-in:
+
+```env
+EMBEDDING_PROVIDER=local_bge_m3
+LOCAL_EMBEDDING_MODEL=BAAI/bge-m3
+LOCAL_EMBEDDING_DIMENSIONS=1024
+LOCAL_EMBEDDING_DEVICE=cpu
+LOCAL_EMBEDDING_BATCH_SIZE=8
+
+RERANKER_PROVIDER=local_bge_m3
+LOCAL_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+LOCAL_RERANKER_DEVICE=cpu
+RERANKER_TOP_K=30
+RERANKER_WEIGHT=0.35
+```
+
+Docker installs `sentence-transformers` best-effort. If the optional install fails, the app still runs with OpenAI-compatible embeddings.
+
+To switch an existing server to BGE-M3, use a clean data reset because pgvector dimensions change:
+
+```bash
+cd ~/RAG_PageIndex
+git pull
+EMBEDDING_PROVIDER=local_bge_m3 \
+OPENAI_EMBEDDING_DIMENSIONS=1024 \
+RERANKER_PROVIDER=local_bge_m3 \
+PUBLIC_HOST="10.30.0.15" \
+./scripts/setup-ubuntu.sh
+
+cd /opt/rag-pageindex
+sudo docker compose down -v
+sudo docker compose up --build -d
+```
+
+Then upload documents again so chunks are embedded with BGE-M3.
+
 ## Suggested Phases
 
 ### Phase 1: Local Embedding Adapter
 
-- Add `EMBEDDING_PROVIDER=openai|local_bge_m3`.
-- Add `LOCAL_EMBEDDING_MODEL=BAAI/bge-m3`.
-- Add `/admin/reindex` or a CLI re-index command.
-- Rebuild DB with 1024-dim pgvector.
+- Done: add `EMBEDDING_PROVIDER=openai|local_bge_m3`.
+- Done: add `LOCAL_EMBEDDING_MODEL=BAAI/bge-m3`.
+- Todo: add `/admin/reindex` or a CLI re-index command.
+- Required during switch: rebuild DB with 1024-dim pgvector.
 
 ### Phase 2: Reranker
 
-- Retrieve top 30 by semantic + lexical.
-- Rerank with `BAAI/bge-reranker-v2-m3`.
-- Send only top 4-6 chunks to chat.
-- Store `rerank_score` in search response for debugging.
+- Done: retrieve top 30 by semantic + lexical.
+- Done: rerank with `BAAI/bge-reranker-v2-m3` when `RERANKER_PROVIDER=local_bge_m3`.
+- Done: chat context is already capped by `CHAT_CONTEXT_LIMIT`.
+- Done: store `rerank_score` in search response for debugging.
 
 ### Phase 3: OpenSearch/BM25
 

@@ -1,0 +1,2 @@
+# Optional self-hosted retrieval. Install best-effort in Docker.
+sentence-transformers>=3.0.0

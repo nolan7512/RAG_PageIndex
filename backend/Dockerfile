@@ -16,9 +16,10 @@ RUN apt-get update \
         tesseract-ocr-vie \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements-rag.txt requirements-ocr.txt ./
+COPY requirements.txt requirements-rag.txt requirements-ocr.txt requirements-retrieval.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir -r requirements-rag.txt || echo "Optional RAG-Anything install failed; fallback parsers remain available."
+RUN pip install --no-cache-dir -r requirements-retrieval.txt || echo "Optional self-hosted retrieval install failed; OpenAI-compatible embedding remains available."
 RUN pip install --no-cache-dir "pypdfium2>=4.30.0" || echo "Optional pypdfium2 install failed; scanned PDF OCR will be limited."
 RUN pip install --no-cache-dir "paddlepaddle>=3.0.0" "paddleocr>=3.0.0" || echo "Optional PaddleOCR install failed; Tesseract OCR remains available."
 RUN pip install --no-cache-dir "vietocr>=0.3.13" || echo "Optional VietOCR install failed; Tesseract OCR remains available."

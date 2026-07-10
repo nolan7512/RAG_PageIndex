@@ -9,6 +9,7 @@ from app.models import Document, DocumentChunk, PageIndex, User
 from app.services.chunking import excerpt
 from app.services.embeddings import embed_text
 from app.services.pageindex import page_boosts_from_tree
+from app.services.reranking import rerank_scores
 from app.services.vietnamese import lexical_score, tokenize_vietnamese_query
 
 
@@ -21,6 +22,7 @@ class RetrievedChunk:
     document: Document
     score: float
     lexical_score: float = 0.0
+    rerank_score: float = 0.0
 
 
 def retrieve_chunks(db: Session, user: User, query: str, limit: int = 8, candidates: int = 30) -> List[RetrievedChunk]:
@@ -39,6 +41,8 @@ def retrieve_chunks(db: Session, user: User, query: str, limit: int = 8, candida
     boosted.sort(key=lambda item: item.score, reverse=True)
     for result in boosted:
         result.lexical_score = max(result.lexical_score, lexical_score(query, result.chunk.content))
+    _apply_reranker(query, boosted)
+    boosted.sort(key=lambda item: item.score, reverse=True)
     return boosted[:limit]
 
 
@@ -51,6 +55,7 @@ def result_to_dict(result: RetrievedChunk):
         "excerpt": excerpt(result.chunk.content),
         "score": round(float(result.score), 4),
         "lexical_score": round(float(result.lexical_score), 4),
+        "rerank_score": round(float(result.rerank_score), 4),
     }
 
 
@@ -143,6 +148,22 @@ def _apply_pageindex_boosts(db: Session, query: str, results: List[RetrievedChun
     for result in results:
         boost = boosts_by_doc.get(result.document.id, {}).get(result.chunk.page_number, 0.0)
         result.score += boost
+
+
+def _apply_reranker(query: str, results: List[RetrievedChunk]) -> None:
+    if settings.reranker_provider != "local_bge_m3" or not results:
+        return
+    candidates = results[: max(1, settings.reranker_top_k)]
+    scores = rerank_scores(query, [item.chunk.content for item in candidates])
+    if not scores or len(scores) != len(candidates):
+        return
+    min_score = min(scores)
+    max_score = max(scores)
+    span = max(max_score - min_score, 1e-9)
+    for item, raw_score in zip(candidates, scores):
+        normalized = (raw_score - min_score) / span
+        item.rerank_score = normalized
+        item.score = item.score * (1.0 - settings.reranker_weight) + normalized * settings.reranker_weight
 
 
 def _cosine_similarity(left: List[float], right: List[float]) -> float:

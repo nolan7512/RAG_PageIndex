@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     openai_embedding_dimensions: int = 1536
     openai_temperature: float = 0.1
     use_fake_openai: bool = False
+    embedding_provider: str = "openai"
+    local_embedding_model: str = "BAAI/bge-m3"
+    local_embedding_dimensions: int = 1024
+    local_embedding_device: str = "cpu"
+    local_embedding_batch_size: int = 8
+    reranker_provider: str = "none"
+    local_reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    local_reranker_device: str = "cpu"
+    reranker_top_k: int = 30
+    reranker_weight: float = 0.35
 
     rag_storage_dir: str = "./data"
     max_upload_mb: int = 50
@@ -87,6 +97,12 @@ class Settings(BaseSettings):
     @property
     def is_postgres(self) -> bool:
         return self.database_url.startswith("postgres")
+
+    @property
+    def embedding_dimensions(self) -> int:
+        if self.embedding_provider == "local_bge_m3":
+            return self.local_embedding_dimensions
+        return self.openai_embedding_dimensions
 
 
 @lru_cache
