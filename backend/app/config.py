@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     pdf_ocr_scale: float = 2.0
     pdf_ocr_max_pages: int = 100
     ocr_min_line_confidence: float = 0.35
-    paddle_ocr_lang: str = "vi"
+    paddle_ocr_lang: str = "vi,ch"
     paddle_ocr_device: str = "cpu"
     vietocr_device: str = "cpu"
     vietocr_config: str = "vgg_transformer"

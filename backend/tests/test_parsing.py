@@ -63,3 +63,33 @@ def test_filter_ocr_lines_drops_low_confidence(monkeypatch):
     )
 
     assert lines == [{"text": "tai nạn lao động", "confidence": 0.9, "bbox": [0, 20, 100, 40]}]
+
+
+def test_paddle_ocr_tries_chinese_and_selects_best(monkeypatch):
+    monkeypatch.setattr(parsing.settings, "paddle_ocr_lang", "vi,ch")
+
+    def fake_paddle_lang(_image, lang):
+        if lang == "vi":
+            return {
+                "text": "ARAB AL ANIA",
+                "lang": "vi",
+                "confidence_avg": 0.3,
+                "confidence_min": 0.2,
+                "lines": [{"text": "ARAB AL ANIA", "confidence": 0.3, "bbox": None}],
+                "quality_score": parsing._ocr_quality_score("ARAB AL ANIA", 0.3, 1),
+            }
+        return {
+            "text": "工伤 劳动 事故",
+            "lang": "ch",
+            "confidence_avg": 0.9,
+            "confidence_min": 0.85,
+            "lines": [{"text": "工伤 劳动 事故", "confidence": 0.9, "bbox": None}],
+            "quality_score": parsing._ocr_quality_score("工伤 劳动 事故", 0.9, 1),
+        }
+
+    monkeypatch.setattr(parsing, "_ocr_image_with_paddle_lang", fake_paddle_lang)
+
+    result = parsing._ocr_image_with_paddle(object())
+
+    assert result["lang"] == "ch"
+    assert result["attempted_langs"] == ["vi", "ch"]

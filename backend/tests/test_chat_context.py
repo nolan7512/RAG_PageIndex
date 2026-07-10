@@ -40,4 +40,11 @@ def test_build_limited_context_caps_chunk_text(monkeypatch):
 
 def test_no_information_answer_detection():
     assert chat._is_no_information_answer("Thông tin này không tìm thấy trong tài liệu.")
+    assert chat._is_no_information_answer("Thông tin về chính sách thưởng Tết không được tìm thấy trong các tài liệu đã cung cấp.")
     assert not chat._is_no_information_answer("Ngày hiệu lực là 01/01/2024.")
+
+
+def test_no_information_answer_formats_topic():
+    answer = chat._no_information_answer("chính sách thưởng tết như thế nào ?")
+
+    assert answer == "Thông tin về chính sách thưởng Tết không được tìm thấy trong các tài liệu đã cung cấp."

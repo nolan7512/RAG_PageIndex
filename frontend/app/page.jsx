@@ -639,15 +639,27 @@ function ChatBubble({ item, onCitationClick }) {
       {item.citations?.length ? (
         <div className="citation-list">
           {item.citations.map((citation) => (
-            <button
+            <div
               className="citation-row"
               key={citation.chunk_id}
-              onClick={() => onCitationClick(citation.document_id, citation.page_number)}
             >
-              <strong>{citation.filename}</strong>
-              <span>Trang {citation.page_number}</span>
-              <p>{citation.excerpt}</p>
-            </button>
+              <button
+                className="citation-open"
+                onClick={() => onCitationClick(citation.document_id, citation.page_number)}
+              >
+                <strong>{citation.filename}</strong>
+                <span>Trang {citation.page_number}</span>
+                <p>{citation.excerpt}</p>
+              </button>
+              <button
+                className="citation-download"
+                onClick={() => window.open(downloadUrl(citation.document_id), "_blank", "noopener,noreferrer")}
+                title="Download file"
+                aria-label={`Download ${citation.filename}`}
+              >
+                <ArrowDownToLine size={15} aria-hidden="true" />
+              </button>
+            </div>
           ))}
         </div>
       ) : null}

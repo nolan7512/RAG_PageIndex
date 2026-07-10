@@ -1,3 +1,4 @@
+import re
 from typing import List, Tuple
 
 from openai import OpenAIError
@@ -34,6 +35,7 @@ def answer_question(
     db.add(ConversationMessage(conversation_id=conversation.id, role="user", content=message, citations=[]))
     answer = _generate_answer(message, context_chunks)
     if _is_no_information_answer(answer):
+        answer = _no_information_answer(message)
         citations = []
     db.add(
         ConversationMessage(
@@ -126,13 +128,37 @@ def _is_no_information_answer(answer: str) -> bool:
     normalized = answer.lower()
     markers = [
         "không tìm thấy",
+        "không được tìm thấy",
         "khong tim thay",
+        "khong duoc tim thay",
         "không có trong tài liệu",
         "khong co trong tai lieu",
         "not found in the document",
         "not found in the documents",
     ]
     return any(marker in normalized for marker in markers)
+
+
+def _no_information_answer(message: str) -> str:
+    topic = re.sub(r"\s+", " ", message.strip(" \t\r\n?.!")).strip()
+    replacements = [
+        r"^tài liệu\s+có\s+nói\s+về\s+",
+        r"^tai lieu\s+co\s+noi\s+ve\s+",
+        r"^có\s+nói\s+về\s+",
+        r"^co\s+noi\s+ve\s+",
+        r"^cho\s+tôi\s+biết\s+về\s+",
+        r"^cho\s+toi\s+biet\s+ve\s+",
+        r"\s+như\s+thế\s+nào$",
+        r"\s+nhu\s+the\s+nao$",
+        r"\s+không$",
+        r"\s+khong$",
+    ]
+    for pattern in replacements:
+        topic = re.sub(pattern, "", topic, flags=re.IGNORECASE).strip()
+    topic = re.sub(r"\btết\b", "Tết", topic, flags=re.IGNORECASE)
+    if not topic or len(topic) > 120:
+        return "Thông tin không được tìm thấy trong các tài liệu đã cung cấp."
+    return f"Thông tin về {topic} không được tìm thấy trong các tài liệu đã cung cấp."
 
 
 def _build_limited_context(retrieved: List[RetrievedChunk]) -> str:

@@ -174,7 +174,8 @@ def _ocr_image_to_block(document_id: str, image, filename: str, page_number: int
                 metadata={
                     "parser": "paddleocr",
                     "source_file": filename,
-                    "ocr_lang": settings.paddle_ocr_lang,
+                    "ocr_lang": paddle_result["lang"],
+                    "ocr_attempted_langs": paddle_result["attempted_langs"],
                     "ocr_device": settings.paddle_ocr_device,
                     "ocr_scale": settings.pdf_ocr_scale,
                     "ocr_confidence_avg": paddle_result["confidence_avg"],
@@ -214,8 +215,21 @@ def _ocr_image_to_block(document_id: str, image, filename: str, page_number: int
 
 
 def _ocr_image_with_paddle(image) -> Optional[Dict[str, Any]]:
+    attempted_langs = _paddle_ocr_langs()
+    best_result = None
+    for lang in attempted_langs:
+        result = _ocr_image_with_paddle_lang(image, lang)
+        if result is None:
+            continue
+        result["attempted_langs"] = attempted_langs
+        if best_result is None or result["quality_score"] > best_result["quality_score"]:
+            best_result = result
+    return best_result
+
+
+def _ocr_image_with_paddle_lang(image, lang: str) -> Optional[Dict[str, Any]]:
     try:
-        ocr = _paddle_ocr_engine()
+        ocr = _paddle_ocr_engine(lang)
     except Exception:
         return None
 
@@ -231,9 +245,11 @@ def _ocr_image_with_paddle(image) -> Optional[Dict[str, Any]]:
         confidence_min = round(min(confidences), 4) if confidences else None
         return {
             "text": text,
+            "lang": lang,
             "confidence_avg": confidence_avg,
             "confidence_min": confidence_min,
             "lines": lines,
+            "quality_score": _ocr_quality_score(text, confidence_avg, len(lines)),
         }
     except Exception:
         return None
@@ -279,12 +295,27 @@ def _vietocr_engine():
     return Predictor(config)
 
 
-@lru_cache(maxsize=1)
-def _paddle_ocr_engine():
+def _paddle_ocr_langs() -> List[str]:
+    langs = [part.strip() for part in settings.paddle_ocr_lang.split(",") if part.strip()]
+    if not langs:
+        langs = ["vi"]
+    return list(dict.fromkeys(langs))
+
+
+def _ocr_quality_score(text: str, confidence_avg: Optional[float], line_count: int) -> float:
+    confidence = confidence_avg if confidence_avg is not None else 0.0
+    text_len_score = min(len(text.strip()) / 1200, 1.0)
+    line_score = min(line_count / 30, 1.0)
+    cjk_bonus = 0.08 if any("\u4e00" <= char <= "\u9fff" for char in text) else 0.0
+    return round(confidence * 0.7 + line_score * 0.15 + text_len_score * 0.15 + cjk_bonus, 4)
+
+
+@lru_cache(maxsize=4)
+def _paddle_ocr_engine(lang: str):
     from paddleocr import PaddleOCR
 
     kwargs = {
-        "lang": settings.paddle_ocr_lang,
+        "lang": lang,
         "device": settings.paddle_ocr_device,
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
@@ -293,7 +324,7 @@ def _paddle_ocr_engine():
     try:
         return PaddleOCR(**kwargs)
     except TypeError:
-        return PaddleOCR(lang=settings.paddle_ocr_lang, use_angle_cls=False)
+        return PaddleOCR(lang=lang, use_angle_cls=False)
 
 
 def _run_paddle_ocr(ocr, image_path: Path):
