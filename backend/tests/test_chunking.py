@@ -28,3 +28,21 @@ def test_excerpt_trims_long_text():
 
     assert len(value) <= 80
     assert value.endswith("...")
+
+
+def test_blocks_to_chunks_adds_section_title_metadata():
+    blocks = [
+        ContentBlock(
+            document_id="doc-1",
+            page_number=2,
+            block_type="text",
+            content="I. MỤC ĐÍCH\nHướng dẫn tai nạn lao động.\n\nII. PHẠM VI\nToàn thể nhân viên.",
+            metadata={"parser": "tesseract-pdf-ocr"},
+        )
+    ]
+
+    chunks = blocks_to_chunks("doc-1", blocks, max_tokens=40)
+
+    assert len(chunks) == 2
+    assert chunks[0].metadata["section_title"] == "I. MỤC ĐÍCH"
+    assert chunks[1].metadata["section_title"] == "II. PHẠM VI"

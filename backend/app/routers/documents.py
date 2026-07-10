@@ -13,6 +13,7 @@ from app.models import Document, DocumentChunk, IngestionJob, User
 from app.queue import enqueue_ingestion
 from app.schemas import DocumentOut, DocumentReviewOut, DocumentStatusOut, ParsedBlockOut, ReviewChunkOut
 from app.services.permissions import can_access_document
+from app.services.ingestion_progress import init_progress, load_progress
 from app.services.storage import document_artifact_dir, original_file_path, remove_document_files
 
 
@@ -66,6 +67,7 @@ async def upload_document(
     job = IngestionJob(document_id=document.id, status="queued")
     db.add(job)
     db.commit()
+    init_progress(document.id, document.filename)
     db.refresh(document)
 
     try:
@@ -122,6 +124,7 @@ def get_document_status(document_id: str, db: Session = Depends(get_db), current
         page_count=document.page_count,
         error_message=document.error_message,
         job_status=job.status if job else None,
+        steps=load_progress(document.id).get("steps", []),
     )
 
 

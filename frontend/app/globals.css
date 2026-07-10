@@ -392,7 +392,7 @@ button:focus-visible {
 
 .review-panel {
   grid-column: 1 / -1;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .compact-review {
@@ -442,6 +442,52 @@ button:focus-visible {
   color: var(--muted);
   font-size: 0.84rem;
   padding: 4px 8px;
+}
+
+.ingestion-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ingestion-steps.compact {
+  padding: 7px 0 0;
+  border-bottom: 0;
+  gap: 5px;
+}
+
+.ingestion-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 3px 8px;
+  font-size: 0.78rem;
+}
+
+.ingestion-step em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.ingestion-step.done {
+  color: oklch(0.34 0.09 145);
+  background: oklch(0.93 0.05 145);
+}
+
+.ingestion-step.processing {
+  color: var(--primary);
+  background: oklch(0.91 0.04 110);
+}
+
+.ingestion-step.failed {
+  color: var(--danger);
+  background: oklch(0.94 0.04 25);
 }
 
 .review-grid {
@@ -582,6 +628,20 @@ button:focus-visible {
   background: var(--surface);
 }
 
+.meta-button {
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  padding: 3px 7px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.meta-button:hover {
+  background: var(--surface-strong);
+}
+
 .result-row p,
 .chat-bubble p {
   margin: 0;
@@ -614,11 +674,20 @@ button:focus-visible {
 }
 
 .citation-row {
+  border: 0;
   border-radius: 8px;
   background: var(--surface);
   padding: 9px;
   display: grid;
   gap: 4px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.citation-row:hover {
+  background: var(--surface-strong);
 }
 
 .citation-row strong {

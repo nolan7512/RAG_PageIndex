@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
@@ -38,6 +38,7 @@ class DocumentStatusOut(BaseModel):
     page_count: int
     error_message: Optional[str]
     job_status: Optional[str] = None
+    steps: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ParsedBlockOut(BaseModel):

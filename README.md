@@ -90,6 +90,7 @@ npm run build
 - Chat context is capped by `CHAT_CONTEXT_LIMIT`, `CHAT_CONTEXT_MAX_CHARS`, and `CHAT_CHUNK_MAX_CHARS` to control OpenAI input tokens. Low-relevance contexts are skipped, and no-information answers return without citations.
 - PageIndex is attempted for long documents when `PAGEINDEX_COMMAND` is configured. Otherwise the worker creates a lightweight page tree from parsed chunks so the API contract still works.
 - Vietnamese retrieval now includes Unicode normalization and diacritic-insensitive lexical fallback. See `docs/VIETNAMESE_RAG_PLAN.md`.
+- The BGE-M3, hybrid search, OpenSearch, and reranker upgrade path is tracked in `docs/SELF_HOSTED_RETRIEVAL_PLAN.md`.
 - Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.
 - API keys, uploaded files, and generated artifacts are intentionally excluded from git.
 

@@ -5,6 +5,7 @@ import {
   ArrowDownToLine,
   Bot,
   CheckCircle2,
+  CircleDashed,
   Eye,
   FileText,
   Layers3,
@@ -14,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  XCircle,
   Trash2,
   UploadCloud
 } from "lucide-react";
@@ -111,6 +113,7 @@ function LoginScreen({ onLogin, error, setError }) {
 
 function Workbench({ user, onLogout }) {
   const [documents, setDocuments] = useState([]);
+  const [documentStatuses, setDocumentStatuses] = useState({});
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
@@ -133,12 +136,28 @@ function Workbench({ user, onLogout }) {
   async function loadDocuments() {
     setDocumentsLoading(true);
     try {
-      setDocuments(await apiFetch("/documents"));
+      const items = await apiFetch("/documents");
+      setDocuments(items);
+      loadDocumentStatuses(items);
     } catch (err) {
       setNotice(err.message);
     } finally {
       setDocumentsLoading(false);
     }
+  }
+
+  async function loadDocumentStatuses(items) {
+    const visibleItems = items.slice(0, 12);
+    const entries = await Promise.all(
+      visibleItems.map(async (document) => {
+        try {
+          return [document.id, await apiFetch(`/documents/${document.id}/status`)];
+        } catch {
+          return [document.id, null];
+        }
+      })
+    );
+    setDocumentStatuses((current) => ({ ...current, ...Object.fromEntries(entries.filter(([, value]) => value)) }));
   }
 
   useEffect(() => {
@@ -178,11 +197,21 @@ function Workbench({ user, onLogout }) {
     }
   }
 
-  async function openReview(documentId) {
+  const [reviewPage, setReviewPage] = useState(1);
+
+  async function openReview(documentId, pageNumber = 1) {
     setReviewLoading(true);
     setNotice("");
+    setReviewPage(Math.max(1, Number(pageNumber) || 1));
     try {
-      setReview(await apiFetch(`/documents/${documentId}/review`));
+      const [reviewPayload, statusPayload] = await Promise.all([
+        apiFetch(`/documents/${documentId}/review`),
+        apiFetch(`/documents/${documentId}/status`).catch(() => null)
+      ]);
+      setReview(reviewPayload);
+      if (statusPayload) {
+        setDocumentStatuses((current) => ({ ...current, [documentId]: statusPayload }));
+      }
     } catch (err) {
       setNotice(err.message);
     } finally {
@@ -269,6 +298,7 @@ function Workbench({ user, onLogout }) {
           onDownload={(id) => window.open(downloadUrl(id), "_blank", "noopener,noreferrer")}
           onReview={openReview}
           selectedDocumentId={review?.document?.id}
+          statuses={documentStatuses}
         />
 
         <button className="ghost-button logout" onClick={logout}>
@@ -292,7 +322,14 @@ function Workbench({ user, onLogout }) {
         </header>
 
         <div className="work-grid">
-          <ReviewPanel review={review} loading={reviewLoading} onClose={() => setReview(null)} />
+          <ReviewPanel
+            review={review}
+            loading={reviewLoading}
+            status={review?.document?.id ? documentStatuses[review.document.id] : null}
+            activePage={reviewPage}
+            onPageChange={setReviewPage}
+            onClose={() => setReview(null)}
+          />
 
           <section className="tool-panel search-panel" aria-labelledby="search-title">
             <div className="panel-heading">
@@ -312,7 +349,7 @@ function Workbench({ user, onLogout }) {
             </form>
             <div className="result-list">
               {results.length ? (
-                results.map((result) => <SearchResult key={result.chunk_id} result={result} />)
+                results.map((result) => <SearchResult key={result.chunk_id} result={result} onOpenPage={openReview} />)
               ) : (
                 <EmptyState text="Chưa có kết quả." />
               )}
@@ -326,7 +363,9 @@ function Workbench({ user, onLogout }) {
             </div>
             <div className="chat-log">
               {chatLog.length ? (
-                chatLog.map((item, index) => <ChatBubble key={`${item.role}-${index}`} item={item} />)
+                chatLog.map((item, index) => (
+                  <ChatBubble key={`${item.role}-${index}`} item={item} onCitationClick={openReview} />
+                ))
               ) : (
                 <EmptyState text="Đặt câu hỏi trên tài liệu đã index." />
               )}
@@ -349,7 +388,7 @@ function Workbench({ user, onLogout }) {
   );
 }
 
-function DocumentList({ documents, loading, onDelete, onDownload, onReview, selectedDocumentId }) {
+function DocumentList({ documents, loading, onDelete, onDownload, onReview, selectedDocumentId, statuses }) {
   if (loading) {
     return (
       <div className="document-list">
@@ -377,6 +416,7 @@ function DocumentList({ documents, loading, onDelete, onDownload, onReview, sele
               {formatBytes(document.size_bytes)} · {document.page_count || 0} trang
             </span>
             {document.error_message ? <em>{document.error_message}</em> : null}
+            <IngestionSteps steps={statuses?.[document.id]?.steps || []} compact />
           </div>
           <StatusBadge status={document.status} />
           <div className="row-actions">
@@ -396,7 +436,7 @@ function DocumentList({ documents, loading, onDelete, onDownload, onReview, sele
   );
 }
 
-function ReviewPanel({ review, loading, onClose }) {
+function ReviewPanel({ review, loading, status, activePage, onPageChange, onClose }) {
   if (loading) {
     return (
       <section className="tool-panel review-panel" aria-labelledby="review-title">
@@ -451,11 +491,16 @@ function ReviewPanel({ review, loading, onClose }) {
         <span>{review.total_tokens} token</span>
         <span>{review.parser_names.length ? review.parser_names.join(", ") : "parser chưa rõ"}</span>
       </div>
+      <IngestionSteps steps={status?.steps || []} />
 
       <div className="review-grid">
         <div className="pdf-preview">
           {isPdf ? (
-            <iframe title={`Preview ${review.document.filename}`} src={downloadUrl(review.document.id)} />
+            <iframe
+              key={`${review.document.id}-${activePage}`}
+              title={`Preview ${review.document.filename}`}
+              src={`${downloadUrl(review.document.id)}#page=${activePage}`}
+            />
           ) : (
             <EmptyState text="Preview gốc hiện ưu tiên PDF. Dùng nút download để xem file Office/ảnh." />
           )}
@@ -468,7 +513,9 @@ function ReviewPanel({ review, loading, onClose }) {
           </div>
           <div className="review-list">
             {firstBlocks.length ? (
-              firstBlocks.map((block, index) => <ParsedBlock key={`${block.page_number}-${index}`} block={block} />)
+              firstBlocks.map((block, index) => (
+                <ParsedBlock key={`${block.page_number}-${index}`} block={block} onOpenPage={onPageChange} />
+              ))
             ) : (
               <EmptyState text="Chưa có parsed artifact. File có thể đang xử lý hoặc parser lỗi." />
             )}
@@ -480,7 +527,7 @@ function ReviewPanel({ review, loading, onClose }) {
           </div>
           <div className="review-list chunks">
             {firstChunks.length ? (
-              firstChunks.map((chunk) => <ReviewChunk key={chunk.id} chunk={chunk} />)
+              firstChunks.map((chunk) => <ReviewChunk key={chunk.id} chunk={chunk} onOpenPage={onPageChange} />)
             ) : (
               <EmptyState text="Chưa có chunk đã index." />
             )}
@@ -491,14 +538,16 @@ function ReviewPanel({ review, loading, onClose }) {
   );
 }
 
-function ParsedBlock({ block }) {
+function ParsedBlock({ block, onOpenPage }) {
   const confidenceAvg = formatConfidence(block.metadata?.ocr_confidence_avg);
   const confidenceMin = formatConfidence(block.metadata?.ocr_confidence_min);
   const ocrLines = Array.isArray(block.metadata?.ocr_lines) ? block.metadata.ocr_lines.slice(0, 6) : [];
   return (
     <article className="review-row">
       <div className="result-meta">
-        <span>Trang {block.page_number}</span>
+        <button className="meta-button" onClick={() => onOpenPage(block.page_number)}>
+          Trang {block.page_number}
+        </button>
         <span>{block.block_type}</span>
         {block.metadata?.parser ? <span>{block.metadata.parser}</span> : null}
         {confidenceAvg ? <span>avg {confidenceAvg}</span> : null}
@@ -518,13 +567,15 @@ function ParsedBlock({ block }) {
   );
 }
 
-function ReviewChunk({ chunk }) {
+function ReviewChunk({ chunk, onOpenPage }) {
   const confidenceAvg = formatConfidence(chunk.metadata?.ocr_confidence_avg);
   return (
     <article className="review-row">
       <div className="result-meta">
         <span>Chunk {chunk.chunk_index}</span>
-        <span>Trang {chunk.page_number}</span>
+        <button className="meta-button" onClick={() => onOpenPage(chunk.page_number)}>
+          Trang {chunk.page_number}
+        </button>
         <span>{chunk.content_type}</span>
         <span>{chunk.token_count} token</span>
         {chunk.metadata?.parser ? <span>{chunk.metadata.parser}</span> : null}
@@ -560,12 +611,14 @@ function StatusBadge({ status }) {
   return <span className={`status-badge ${config.tone}`}>{config.label}</span>;
 }
 
-function SearchResult({ result }) {
+function SearchResult({ result, onOpenPage }) {
   return (
     <article className="result-row">
       <div className="result-meta">
         <span>{result.filename}</span>
-        <span>Trang {result.page_number}</span>
+        <button className="meta-button" onClick={() => onOpenPage(result.document_id, result.page_number)}>
+          Trang {result.page_number}
+        </button>
         <span>{Math.round(result.score * 100)}%</span>
       </div>
       <p>{result.excerpt}</p>
@@ -573,7 +626,7 @@ function SearchResult({ result }) {
   );
 }
 
-function ChatBubble({ item }) {
+function ChatBubble({ item, onCitationClick }) {
   const isAssistant = item.role === "assistant";
   return (
     <article className={`chat-bubble ${isAssistant ? "assistant" : "user"}`}>
@@ -585,16 +638,52 @@ function ChatBubble({ item }) {
       {item.citations?.length ? (
         <div className="citation-list">
           {item.citations.map((citation) => (
-            <div className="citation-row" key={citation.chunk_id}>
+            <button
+              className="citation-row"
+              key={citation.chunk_id}
+              onClick={() => onCitationClick(citation.document_id, citation.page_number)}
+            >
               <strong>{citation.filename}</strong>
               <span>Trang {citation.page_number}</span>
               <p>{citation.excerpt}</p>
-            </div>
+            </button>
           ))}
         </div>
       ) : null}
     </article>
   );
+}
+
+function IngestionSteps({ steps, compact = false }) {
+  if (!steps?.length) return null;
+  const visibleSteps = compact ? steps.filter((step) => step.status !== "pending") : steps;
+  if (!visibleSteps.length) return null;
+  return (
+    <div className={`ingestion-steps ${compact ? "compact" : ""}`} aria-label="Ingestion progress">
+      {visibleSteps.map((step) => (
+        <div className={`ingestion-step ${step.status}`} key={step.name}>
+          {step.status === "done" ? <CheckCircle2 size={13} /> : null}
+          {step.status === "failed" ? <XCircle size={13} /> : null}
+          {["processing", "pending", "skipped"].includes(step.status) ? <CircleDashed size={13} /> : null}
+          <span>{stepLabel(step.name)}</span>
+          {!compact && step.message ? <em>{step.message}</em> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function stepLabel(name) {
+  const labels = {
+    uploaded: "uploaded",
+    parsing: "parsing",
+    ocr: "OCR",
+    chunking: "chunking",
+    embedding: "embedding",
+    pageindex: "PageIndex",
+    ready: "ready"
+  };
+  return labels[name] || name;
 }
 
 function EmptyState({ text }) {
