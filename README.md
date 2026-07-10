@@ -95,6 +95,73 @@ npm run build
 - Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.
 - API keys, uploaded files, and generated artifacts are intentionally excluded from git.
 
+## Common Ubuntu Operations
+
+Run these commands on the Ubuntu server from the deployed project folder:
+
+```bash
+cd /opt/rag-pageindex
+```
+
+### Use BGE-M3 Embeddings Without CPU Reranker
+
+Recommended for daily CPU-only use. This keeps local BGE-M3 embeddings but disables the slow local reranker.
+
+```bash
+sudo sed -i 's/^EMBEDDING_PROVIDER=.*/EMBEDDING_PROVIDER=local_bge_m3/' .env
+sudo sed -i 's/^RERANKER_PROVIDER=.*/RERANKER_PROVIDER=none/' .env
+sudo docker compose up -d api worker
+```
+
+### Enable Local Reranker With Lower Top-K
+
+Use this only when you accept slower search/chat responses on CPU.
+
+```bash
+sudo sed -i 's/^RERANKER_PROVIDER=.*/RERANKER_PROVIDER=local_bge_m3/' .env
+
+if grep -q '^RERANKER_TOP_K=' .env; then
+  sudo sed -i 's/^RERANKER_TOP_K=.*/RERANKER_TOP_K=5/' .env
+else
+  echo 'RERANKER_TOP_K=5' | sudo tee -a .env
+fi
+
+sudo docker compose up -d api worker
+```
+
+To disable it again:
+
+```bash
+sudo sed -i 's/^RERANKER_PROVIDER=.*/RERANKER_PROVIDER=none/' .env
+sudo docker compose up -d api worker
+```
+
+### OCR For Mixed Vietnamese And Chinese PDFs
+
+The worker image includes Tesseract Vietnamese, English, Simplified Chinese, and Traditional Chinese packages. For Vietnamese plus Simplified Chinese:
+
+```bash
+sudo sed -i 's/^PDF_OCR_LANG=.*/PDF_OCR_LANG=vie+eng+chi_sim/' .env
+sudo docker compose up -d api worker
+```
+
+For documents that also contain Traditional Chinese:
+
+```bash
+sudo sed -i 's/^PDF_OCR_LANG=.*/PDF_OCR_LANG=vie+eng+chi_sim+chi_tra/' .env
+sudo docker compose up -d api worker
+```
+
+If you pulled a new version that changes the Docker image packages, rebuild the backend images:
+
+```bash
+sudo git pull
+sudo docker compose build api worker
+sudo docker compose up -d
+```
+
+Existing uploaded documents keep their old OCR/chunks/embeddings. Delete and upload the file again, or clear the database, when you need OCR and embeddings regenerated.
+
 ## Clear and Reinstall on Ubuntu
 
 Use this when changing embedding dimensions, switching embedding providers, or reinstalling from a clean state.
