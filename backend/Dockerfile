@@ -14,6 +14,8 @@ RUN apt-get update \
         tesseract-ocr \
         tesseract-ocr-eng \
         tesseract-ocr-vie \
+        tesseract-ocr-chi-sim \
+        tesseract-ocr-chi-tra \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-rag.txt requirements-ocr.txt requirements-retrieval.txt ./

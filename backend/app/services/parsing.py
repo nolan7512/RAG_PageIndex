@@ -542,7 +542,7 @@ def _parse_image(document_id: str, path: Path, filename: str) -> List[ContentBlo
         import pytesseract
 
         image = Image.open(str(path))
-        text = pytesseract.image_to_string(image, lang="vie+eng")
+        text = pytesseract.image_to_string(image, lang=settings.pdf_ocr_lang)
         content = text.strip() or f"Image file {filename} produced no OCR text."
     except Exception as exc:
         content = f"Image OCR unavailable for {filename}: {exc}"
