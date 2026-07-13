@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     paddle_ocr_device: str = "cpu"
     vietocr_device: str = "cpu"
     vietocr_config: str = "vgg_transformer"
-    pageindex_min_pages: int = 30
+    pageindex_min_pages: int = 1
     pageindex_command: Optional[str] = None
     sync_ingestion_on_queue_failure: bool = False
 

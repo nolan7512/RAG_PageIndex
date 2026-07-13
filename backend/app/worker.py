@@ -119,7 +119,7 @@ def ingest_document(document_id: str) -> None:
         document.status = "ready"
 
         if page_count >= settings.pageindex_min_pages:
-            mark_step(document.id, "pageindex", "processing", "Building page index for long document.")
+            mark_step(document.id, "pageindex", "processing", "Building page index.")
             db.flush()
             tree = build_page_index(document.id, document.storage_path_as_path, db_chunks)
             page_index = db.query(PageIndex).filter(PageIndex.document_id == document.id).one_or_none()
