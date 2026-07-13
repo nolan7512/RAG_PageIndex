@@ -203,6 +203,7 @@ Check the local model:
 ```bash
 sudo docker compose exec -T ollama ollama list
 sudo docker compose exec -T api python -c "from app.config import get_settings; s=get_settings(); print(s.api_provider, s.openai_base_url, s.openai_chat_model, s.embedding_provider)"
+sudo docker compose exec -T api python -c "import sentence_transformers; print('sentence-transformers ok')"
 ```
 
 ### Optional Adjacent Platforms

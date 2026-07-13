@@ -1,2 +1,2 @@
-# Optional self-hosted retrieval. Install best-effort in Docker.
+# Required when EMBEDDING_PROVIDER=local_bge_m3.
 sentence-transformers>=3.0.0
