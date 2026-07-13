@@ -204,10 +204,20 @@ If API/frontend ports are already used, change the host ports and rebuild fronte
 sudo sed -i 's/^API_HOST_PORT=.*/API_HOST_PORT=8112/' .env
 sudo sed -i 's/^FRONTEND_HOST_PORT=.*/FRONTEND_HOST_PORT=3112/' .env
 sudo sed -i 's#^FRONTEND_ORIGIN=.*#FRONTEND_ORIGIN=http://10.30.0.15:3112#' .env
+sudo sed -i 's#^CORS_ORIGINS=.*#CORS_ORIGINS=http://10.30.0.15:3112,http://localhost:3112#' .env
 sudo sed -i 's#^NEXT_PUBLIC_API_BASE_URL=.*#NEXT_PUBLIC_API_BASE_URL=http://10.30.0.15:8112#' .env
 grep -q '^API_HOST_PORT=' .env || echo 'API_HOST_PORT=8112' | sudo tee -a .env
 grep -q '^FRONTEND_HOST_PORT=' .env || echo 'FRONTEND_HOST_PORT=3112' | sudo tee -a .env
 sudo docker compose up -d --build --force-recreate frontend api worker
+```
+
+If login is blocked by CORS, make sure `FRONTEND_ORIGIN` and `CORS_ORIGINS` include the exact browser origin, then recreate the API container:
+
+```bash
+sudo sed -i 's#^FRONTEND_ORIGIN=.*#FRONTEND_ORIGIN=http://10.30.0.15:3111#' .env
+sudo sed -i 's#^CORS_ORIGINS=.*#CORS_ORIGINS=http://10.30.0.15:3111,http://localhost:3111#' .env
+grep -q '^CORS_ORIGINS=' .env || echo 'CORS_ORIGINS=http://10.30.0.15:3111,http://localhost:3111' | sudo tee -a .env
+sudo docker compose up -d --force-recreate api
 ```
 
 Alternative small CPU models:

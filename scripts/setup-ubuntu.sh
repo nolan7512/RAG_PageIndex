@@ -274,6 +274,7 @@ ensure_env_file() {
     set_env_if_default ADMIN_PASSWORD "change-me-now" "$admin_password"
   fi
   set_env_value FRONTEND_ORIGIN "$frontend_origin"
+  set_env_value CORS_ORIGINS "${frontend_origin},http://localhost:${FRONTEND_HOST_PORT}"
   set_env_value NEXT_PUBLIC_API_BASE_URL "$api_base"
   set_env_value FRONTEND_HOST_PORT "$FRONTEND_HOST_PORT"
   set_env_value API_HOST_PORT "$API_HOST_PORT"
