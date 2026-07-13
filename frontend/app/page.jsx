@@ -7,6 +7,9 @@ import {
   CheckCircle2,
   CircleDashed,
   Eye,
+  Files,
+  Folder,
+  FolderTree,
   FileText,
   FolderUp,
   Layers3,
@@ -20,7 +23,7 @@ import {
   Trash2,
   UploadCloud
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch, downloadUrl } from "@/lib/api";
 
@@ -116,8 +119,10 @@ function LoginScreen({ onLogin, error, setError }) {
 
 function Workbench({ user, onLogout }) {
   const [documents, setDocuments] = useState([]);
+  const [collectionTrees, setCollectionTrees] = useState([]);
   const [documentStatuses, setDocumentStatuses] = useState({});
   const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [collectionsLoading, setCollectionsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -129,6 +134,7 @@ function Workbench({ user, onLogout }) {
   const [review, setReview] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [selectedScope, setSelectedScope] = useState({ type: "all", id: null, label: "Tất cả tài liệu" });
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
 
@@ -137,21 +143,12 @@ function Workbench({ user, onLogout }) {
     () => documents.filter((document) => ["queued", "processing"].includes(document.status)).length,
     [documents]
   );
+  const scopedDocuments = useMemo(
+    () => documents.filter((document) => documentMatchesScope(document, selectedScope)),
+    [documents, selectedScope]
+  );
 
-  async function loadDocuments() {
-    setDocumentsLoading(true);
-    try {
-      const items = await apiFetch("/documents");
-      setDocuments(items);
-      loadDocumentStatuses(items);
-    } catch (err) {
-      setNotice(err.message);
-    } finally {
-      setDocumentsLoading(false);
-    }
-  }
-
-  async function loadDocumentStatuses(items) {
+  const loadDocumentStatuses = useCallback(async (items) => {
     const visibleItems = items.slice(0, 12);
     const entries = await Promise.all(
       visibleItems.map(async (document) => {
@@ -163,19 +160,57 @@ function Workbench({ user, onLogout }) {
       })
     );
     setDocumentStatuses((current) => ({ ...current, ...Object.fromEntries(entries.filter(([, value]) => value)) }));
-  }
+  }, []);
+
+  const loadDocuments = useCallback(async () => {
+    setDocumentsLoading(true);
+    try {
+      const items = await apiFetch("/documents");
+      setDocuments(items);
+      loadDocumentStatuses(items);
+    } catch (err) {
+      setNotice(err.message);
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }, [loadDocumentStatuses]);
+
+  const loadCollections = useCallback(async () => {
+    setCollectionsLoading(true);
+    try {
+      const collections = await apiFetch("/collections");
+      const trees = await Promise.all(
+        collections.map(async (collection) => {
+          try {
+            return await apiFetch(`/collections/${collection.id}/tree`);
+          } catch {
+            return { ...collection, tree: { id: null, name: collection.name, path: "", depth: 0, children: [], documents: [] } };
+          }
+        })
+      );
+      setCollectionTrees(trees);
+    } catch (err) {
+      setNotice(err.message);
+    } finally {
+      setCollectionsLoading(false);
+    }
+  }, []);
+
+  const reloadWorkspace = useCallback(async () => {
+    await Promise.all([loadDocuments(), loadCollections()]);
+  }, [loadDocuments, loadCollections]);
 
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    reloadWorkspace();
+  }, [reloadWorkspace]);
 
   useEffect(() => {
     if (!processingCount) return;
     const timer = setInterval(loadDocuments, 3500);
     return () => clearInterval(timer);
-  }, [processingCount]);
+  }, [loadDocuments, processingCount]);
 
-  async function uploadFiles(fileList, sourceLabel = "file") {
+  async function uploadFiles(fileList, { sourceLabel = "file", preservePaths = false } = {}) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
     setNotice("");
@@ -194,11 +229,24 @@ function Workbench({ user, onLogout }) {
 
     let uploadedCount = 0;
     const failedFiles = [];
+    let collection = null;
 
     try {
+      if (preservePaths) {
+        const rootName = rootNameFromFiles(acceptedFiles);
+        collection = await apiFetch("/collections", {
+          method: "POST",
+          body: JSON.stringify({ name: rootName, root_path: rootName })
+        });
+        setSelectedScope({ type: "collection", id: collection.id, label: collection.name, collectionId: collection.id });
+      }
       for (const file of acceptedFiles) {
         const form = new FormData();
         form.append("file", file, file.name);
+        form.append("relative_path", preservePaths ? relativePathForFile(file) : file.name);
+        if (collection?.id) {
+          form.append("collection_id", collection.id);
+        }
         try {
           await apiFetch("/documents", { method: "POST", body: form });
           uploadedCount += 1;
@@ -207,7 +255,7 @@ function Workbench({ user, onLogout }) {
           failedFiles.push(`${file.name}: ${err.message}`);
         }
       }
-      await loadDocuments();
+      await reloadWorkspace();
     } finally {
       setUploading(false);
     }
@@ -225,12 +273,12 @@ function Workbench({ user, onLogout }) {
   }
 
   async function uploadFile(event) {
-    await uploadFiles(event.target.files, "file");
+    await uploadFiles(event.target.files, { sourceLabel: "file" });
     event.target.value = "";
   }
 
   async function uploadFolder(event) {
-    await uploadFiles(event.target.files, "file từ folder");
+    await uploadFiles(event.target.files, { sourceLabel: "file từ folder", preservePaths: true });
     event.target.value = "";
   }
 
@@ -239,7 +287,7 @@ function Workbench({ user, onLogout }) {
     try {
       await apiFetch(`/documents/${documentId}`, { method: "DELETE" });
       setReview((current) => (current?.document?.id === documentId ? null : current));
-      await loadDocuments();
+      await reloadWorkspace();
     } catch (err) {
       setNotice(err.message);
     }
@@ -279,7 +327,12 @@ function Workbench({ user, onLogout }) {
     setSearching(true);
     setNotice("");
     try {
-      setResults(await apiFetch("/search", { method: "POST", body: JSON.stringify({ query: trimmed, limit: 8 }) }));
+      setResults(
+        await apiFetch("/search", {
+          method: "POST",
+          body: JSON.stringify({ query: trimmed, limit: 8, ...scopePayload(selectedScope) })
+        })
+      );
     } catch (err) {
       setNotice(err.message);
     } finally {
@@ -298,7 +351,7 @@ function Workbench({ user, onLogout }) {
     try {
       const response = await apiFetch("/chat", {
         method: "POST",
-        body: JSON.stringify({ message: trimmed, conversation_id: conversationId })
+        body: JSON.stringify({ message: trimmed, conversation_id: conversationId, ...scopePayload(selectedScope) })
       });
       setConversationId(response.conversation_id);
       setChatLog((items) => [...items, { role: "assistant", content: response.answer, citations: response.citations }]);
@@ -350,18 +403,25 @@ function Workbench({ user, onLogout }) {
             <FolderUp size={16} aria-hidden="true" />
             Folder
           </button>
-          <button className="icon-button" onClick={loadDocuments} title="Làm mới">
+          <button className="icon-button" onClick={reloadWorkspace} title="Làm mới">
             <RefreshCw size={16} aria-hidden="true" />
           </button>
         </div>
 
         <div className="meter-row" aria-label="Tổng quan tài liệu">
-          <span>{documents.length} file</span>
+          <span>{scopedDocuments.length}/{documents.length} file</span>
           <span>{readyCount} ready</span>
         </div>
 
+        <ScopeTree
+          trees={collectionTrees}
+          loading={collectionsLoading}
+          selectedScope={selectedScope}
+          onSelectScope={setSelectedScope}
+        />
+
         <DocumentList
-          documents={documents}
+          documents={scopedDocuments}
           loading={documentsLoading}
           onDelete={removeDocument}
           onDownload={(id) => window.open(downloadUrl(id), "_blank", "noopener,noreferrer")}
@@ -380,7 +440,9 @@ function Workbench({ user, onLogout }) {
         <header className="workspace-header">
           <div>
             <h1>Document RAG</h1>
-            <p>{processingCount ? `${processingCount} file đang xử lý` : "Index đã sẵn sàng"}</p>
+            <p>
+              {processingCount ? `${processingCount} file đang xử lý` : "Index đã sẵn sàng"} · Scope: {selectedScope.label}
+            </p>
           </div>
           {notice ? (
             <div className="notice" role="alert">
@@ -457,6 +519,129 @@ function Workbench({ user, onLogout }) {
   );
 }
 
+function ScopeTree({ trees, loading, selectedScope, onSelectScope }) {
+  if (loading) {
+    return (
+      <section className="scope-panel" aria-label="Folder tree">
+        <div className="scope-heading">
+          <FolderTree size={16} aria-hidden="true" />
+          <strong>Scope</strong>
+        </div>
+        <div className="skeleton compact" />
+      </section>
+    );
+  }
+
+  return (
+    <section className="scope-panel" aria-label="Folder tree">
+      <div className="scope-heading">
+        <FolderTree size={16} aria-hidden="true" />
+        <strong>Scope</strong>
+      </div>
+      <button
+        className={`tree-row root ${selectedScope.type === "all" ? "active" : ""}`}
+        onClick={() => onSelectScope({ type: "all", id: null, label: "Tất cả tài liệu" })}
+      >
+        <Files size={15} aria-hidden="true" />
+        <span>Tất cả tài liệu</span>
+      </button>
+      <div className="tree-list">
+        {trees.length ? (
+          trees.map((collection) => (
+            <CollectionTreeNode
+              collection={collection}
+              key={collection.id}
+              selectedScope={selectedScope}
+              onSelectScope={onSelectScope}
+            />
+          ))
+        ) : (
+          <EmptyState text="Chưa có collection." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CollectionTreeNode({ collection, selectedScope, onSelectScope }) {
+  const root = collection.tree || { children: [], documents: [] };
+  return (
+    <div className="tree-group">
+      <button
+        className={`tree-row collection ${selectedScope.type === "collection" && selectedScope.id === collection.id ? "active" : ""}`}
+        onClick={() =>
+          onSelectScope({ type: "collection", id: collection.id, label: collection.name, collectionId: collection.id })
+        }
+      >
+        <FolderTree size={15} aria-hidden="true" />
+        <span title={collection.name}>{collection.name}</span>
+      </button>
+      <FolderTreeChildren
+        node={root}
+        collection={collection}
+        level={1}
+        selectedScope={selectedScope}
+        onSelectScope={onSelectScope}
+      />
+    </div>
+  );
+}
+
+function FolderTreeChildren({ node, collection, level, selectedScope, onSelectScope }) {
+  const children = node?.children || [];
+  const documents = node?.documents || [];
+  return (
+    <>
+      {children.map((child) => (
+        <div className="tree-branch" key={child.id || child.path}>
+          <button
+            className={`tree-row folder ${selectedScope.type === "folder" && selectedScope.id === child.id ? "active" : ""}`}
+            style={{ "--level": level }}
+            onClick={() =>
+              onSelectScope({
+                type: "folder",
+                id: child.id,
+                label: `${collection.name}/${child.path}`.replace(/\/$/, ""),
+                collectionId: collection.id,
+                folderPath: child.path
+              })
+            }
+          >
+            <Folder size={15} aria-hidden="true" />
+            <span title={child.path}>{child.name}</span>
+          </button>
+          <FolderTreeChildren
+            node={child}
+            collection={collection}
+            level={level + 1}
+            selectedScope={selectedScope}
+            onSelectScope={onSelectScope}
+          />
+        </div>
+      ))}
+      {documents.map((document) => (
+        <button
+          className={`tree-row document ${selectedScope.type === "document" && selectedScope.id === document.id ? "active" : ""}`}
+          key={document.id}
+          style={{ "--level": level }}
+          onClick={() =>
+            onSelectScope({
+              type: "document",
+              id: document.id,
+              label: document.relative_path || document.filename,
+              collectionId: collection.id,
+              folderPath: document.folder_path || ""
+            })
+          }
+        >
+          <FileText size={14} aria-hidden="true" />
+          <span title={document.relative_path || document.filename}>{document.relative_path || document.filename}</span>
+        </button>
+      ))}
+    </>
+  );
+}
+
 function DocumentList({ documents, loading, onDelete, onDownload, onReview, selectedDocumentId, statuses }) {
   if (loading) {
     return (
@@ -480,7 +665,7 @@ function DocumentList({ documents, loading, onDelete, onDownload, onReview, sele
             <FileText size={17} aria-hidden="true" />
           </div>
           <div className="document-main">
-            <strong title={document.filename}>{document.filename}</strong>
+            <strong title={document.relative_path || document.filename}>{document.relative_path || document.filename}</strong>
             <span>
               {formatBytes(document.size_bytes)} · {document.page_count || 0} trang
             </span>
@@ -686,7 +871,7 @@ function SearchResult({ result, onOpenPage }) {
   return (
     <article className="result-row">
       <div className="result-meta">
-        <span>{result.filename}</span>
+        <span title={result.relative_path || result.filename}>{result.relative_path || result.filename}</span>
         <button className="meta-button" onClick={() => onOpenPage(result.document_id, result.page_number)}>
           Trang {result.page_number}
         </button>
@@ -718,7 +903,7 @@ function ChatBubble({ item, onCitationClick }) {
                 className="citation-open"
                 onClick={() => onCitationClick(citation.document_id, citation.page_number)}
               >
-                <strong>{citation.filename}</strong>
+                <strong>{citation.relative_path || citation.filename}</strong>
                 <span>Trang {citation.page_number}</span>
                 <p>{citation.excerpt}</p>
               </button>
@@ -726,7 +911,7 @@ function ChatBubble({ item, onCitationClick }) {
                 className="citation-download"
                 onClick={() => window.open(downloadUrl(citation.document_id), "_blank", "noopener,noreferrer")}
                 title="Download file"
-                aria-label={`Download ${citation.filename}`}
+                aria-label={`Download ${citation.relative_path || citation.filename}`}
               >
                 <ArrowDownToLine size={15} aria-hidden="true" />
               </button>
@@ -839,6 +1024,36 @@ function stepLabel(name) {
     ready: "ready"
   };
   return labels[name] || name;
+}
+
+function scopePayload(scope) {
+  if (!scope || scope.type === "all") {
+    return { scope_type: "all", scope_id: null };
+  }
+  return { scope_type: scope.type, scope_id: scope.id };
+}
+
+function relativePathForFile(file) {
+  return file?.webkitRelativePath || file?.name || "document";
+}
+
+function rootNameFromFiles(files) {
+  const firstPath = relativePathForFile(files[0] || {});
+  const root = firstPath.split(/[\\/]/).filter(Boolean)[0];
+  return root || "Folder upload";
+}
+
+function documentMatchesScope(document, scope) {
+  if (!scope || scope.type === "all") return true;
+  if (scope.type === "collection") return document.collection_id === scope.id;
+  if (scope.type === "document") return document.id === scope.id;
+  if (scope.type === "folder") {
+    if (document.collection_id !== scope.collectionId) return false;
+    const folderPath = scope.folderPath || "";
+    if (!folderPath) return true;
+    return document.folder_path === folderPath || document.folder_path?.startsWith(`${folderPath}/`);
+  }
+  return true;
 }
 
 function EmptyState({ text }) {

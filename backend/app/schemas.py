@@ -4,6 +4,9 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
+ScopeType = str
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -25,6 +28,10 @@ class DocumentOut(BaseModel):
     status: str
     page_count: int
     error_message: Optional[str]
+    collection_id: Optional[str] = None
+    folder_id: Optional[str] = None
+    relative_path: Optional[str] = None
+    folder_path: Optional[str] = None
     uploaded_by: str
     created_at: datetime
     updated_at: datetime
@@ -71,6 +78,8 @@ class DocumentReviewOut(BaseModel):
 class CitationOut(BaseModel):
     document_id: str
     filename: str
+    relative_path: Optional[str] = None
+    folder_path: Optional[str] = None
     page_number: int
     chunk_id: str
     excerpt: str
@@ -79,11 +88,15 @@ class CitationOut(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     limit: int = 8
+    scope_type: ScopeType = "all"
+    scope_id: Optional[str] = None
 
 
 class SearchResultOut(BaseModel):
     document_id: str
     filename: str
+    relative_path: Optional[str] = None
+    folder_path: Optional[str] = None
     page_number: int
     chunk_id: str
     excerpt: str
@@ -95,6 +108,8 @@ class SearchResultOut(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    scope_type: ScopeType = "all"
+    scope_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -124,3 +139,45 @@ class ConversationOut(BaseModel):
 
 class ConversationDetailOut(ConversationOut):
     messages: List[ConversationMessageOut]
+
+
+class CollectionCreate(BaseModel):
+    name: str
+    root_path: Optional[str] = None
+
+
+class CollectionOut(BaseModel):
+    id: str
+    name: str
+    root_path: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FolderTreeDocumentOut(BaseModel):
+    id: str
+    filename: str
+    relative_path: str
+    folder_path: str
+    status: str
+    page_count: int
+
+
+class FolderTreeNodeOut(BaseModel):
+    id: Optional[str]
+    name: str
+    path: str
+    depth: int
+    children: List["FolderTreeNodeOut"] = Field(default_factory=list)
+    documents: List[FolderTreeDocumentOut] = Field(default_factory=list)
+
+
+class CollectionTreeOut(BaseModel):
+    id: str
+    name: str
+    root_path: str
+    created_by: str
+    tree: FolderTreeNodeOut

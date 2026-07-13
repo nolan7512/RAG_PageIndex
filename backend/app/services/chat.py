@@ -28,8 +28,17 @@ def answer_question(
     user: User,
     message: str,
     conversation_id: str = None,
+    scope_type: str = "all",
+    scope_id: str = None,
 ) -> Tuple[str, Conversation, List[dict]]:
-    retrieved = retrieve_chunks(db, user, message, limit=max(settings.chat_context_limit * 2, 8))
+    retrieved = retrieve_chunks(
+        db,
+        user,
+        message,
+        limit=max(settings.chat_context_limit * 2, 8),
+        scope_type=scope_type,
+        scope_id=scope_id,
+    )
     context_chunks = _select_chat_context(message, retrieved)
     conversation = _get_or_create_conversation(db, user, conversation_id, message)
     citations = [_citation_dict(item) for item in context_chunks]
@@ -182,7 +191,8 @@ def _build_limited_context(retrieved: List[RetrievedChunk]) -> str:
         content = item.chunk.content.strip()
         if len(content) > settings.chat_chunk_max_chars:
             content = content[: settings.chat_chunk_max_chars].rstrip() + "..."
-        header = f"[{index}] File: {item.document.filename} | Page: {item.chunk.page_number} | Chunk: {item.chunk.id}"
+        source_path = item.document.relative_path or item.document.filename
+        header = f"[{index}] File: {source_path} | Page: {item.chunk.page_number} | Chunk: {item.chunk.id}"
         part = f"{header}\n{content}"
         if used_chars + len(part) > settings.chat_context_max_chars:
             remaining = settings.chat_context_max_chars - used_chars
@@ -198,6 +208,8 @@ def _citation_dict(item: RetrievedChunk) -> dict:
     return {
         "document_id": item.document.id,
         "filename": item.document.filename,
+        "relative_path": item.document.relative_path or item.document.filename,
+        "folder_path": item.document.folder_path or "",
         "page_number": item.chunk.page_number,
         "chunk_id": item.chunk.id,
         "excerpt": excerpt(item.chunk.content),

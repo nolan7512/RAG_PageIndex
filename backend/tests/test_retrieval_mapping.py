@@ -4,7 +4,14 @@ from app.services.retrieval import RetrievedChunk, result_to_dict
 
 
 def test_result_to_dict_maps_citation_fields():
-    document = Document(id="doc-1", filename="contract.pdf", storage_path="/tmp/contract.pdf", uploaded_by="user-1")
+    document = Document(
+        id="doc-1",
+        filename="contract.pdf",
+        storage_path="/tmp/contract.pdf",
+        uploaded_by="user-1",
+        relative_path="HR/Contracts/contract.pdf",
+        folder_path="HR/Contracts",
+    )
     chunk = DocumentChunk(
         id="chunk-1",
         document_id="doc-1",
@@ -19,6 +26,8 @@ def test_result_to_dict_maps_citation_fields():
 
     assert payload["document_id"] == "doc-1"
     assert payload["filename"] == "contract.pdf"
+    assert payload["relative_path"] == "HR/Contracts/contract.pdf"
+    assert payload["folder_path"] == "HR/Contracts"
     assert payload["page_number"] == 7
     assert payload["chunk_id"] == "chunk-1"
     assert payload["score"] == 0.9123

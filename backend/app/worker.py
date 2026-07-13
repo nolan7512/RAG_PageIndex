@@ -9,6 +9,7 @@ from app.models import Document, DocumentChunk, IngestionJob, PageIndex
 from app.queue import QUEUE_NAME
 from app.services.chunking import blocks_to_chunks
 from app.services.embeddings import embed_texts
+from app.services.hierarchy import build_embedding_text, ensure_chunk_link, refresh_structure_indexes_for_document
 from app.services.ingestion_progress import fail_progress, mark_step
 from app.services.pageindex import build_page_index
 from app.services.parsing import parse_document
@@ -83,7 +84,8 @@ def ingest_document(document_id: str) -> None:
                 else len(chunks),
             },
         )
-        embeddings = _create_embeddings_with_progress(document.id, [chunk.content for chunk in chunks])
+        embedding_texts = [build_embedding_text(document, chunk.content, chunk.metadata) for chunk in chunks]
+        embeddings = _create_embeddings_with_progress(document.id, embedding_texts)
         mark_step(
             document.id,
             "embedding",
@@ -102,19 +104,36 @@ def ingest_document(document_id: str) -> None:
         db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
         db.flush()
         db_chunks = []
-        for chunk, embedding in zip(chunks, embeddings):
+        for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            metadata = dict(chunk.metadata or {})
+            metadata.update(
+                {
+                    "collection_id": document.collection_id,
+                    "folder_id": document.folder_id,
+                    "relative_path": document.relative_path or document.filename,
+                    "folder_path": document.folder_path or "",
+                }
+            )
             db_chunk = DocumentChunk(
                 document_id=document.id,
+                collection_id=document.collection_id,
+                folder_id=document.folder_id,
+                relative_path=document.relative_path or document.filename,
+                folder_path=document.folder_path or "",
                 page_number=chunk.page_number,
                 chunk_index=chunk.chunk_index,
                 content=chunk.content,
+                embedding_text=embedding_texts[index] if index < len(embedding_texts) else chunk.content,
                 content_type=chunk.content_type,
                 token_count=chunk.token_count,
                 embedding=embedding,
-                metadata_json=chunk.metadata,
+                metadata_json=metadata,
             )
             db.add(db_chunk)
             db_chunks.append(db_chunk)
+        db.flush()
+        for db_chunk in db_chunks:
+            ensure_chunk_link(db, db_chunk)
         document.page_count = page_count
         document.status = "ready"
 
@@ -142,6 +161,7 @@ def ingest_document(document_id: str) -> None:
         if job:
             job.status = "ready"
             job.finished_at = datetime.utcnow()
+        refresh_structure_indexes_for_document(db, document)
         mark_step(document.id, "ready", "done", "Document is ready for search and chat.")
         db.commit()
     except Exception as exc:

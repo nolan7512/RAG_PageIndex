@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import auth, chat, conversations, documents, health, search
+from app.routers import auth, chat, collections, conversations, documents, health, search
 
 
 settings = get_settings()
@@ -20,6 +20,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(collections.router)
 app.include_router(documents.router)
 app.include_router(search.router)
 app.include_router(chat.router)

@@ -18,7 +18,16 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db), current_user: User
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
     try:
-        answer, conversation, citations = answer_question(db, current_user, message, payload.conversation_id)
+        answer, conversation, citations = answer_question(
+            db,
+            current_user,
+            message,
+            payload.conversation_id,
+            scope_type=payload.scope_type,
+            scope_id=payload.scope_id,
+        )
     except OpenAIUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ChatResponse(answer=answer, conversation_id=conversation.id, citations=citations)

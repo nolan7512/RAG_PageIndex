@@ -18,7 +18,16 @@ def search(payload: SearchRequest, db: Session = Depends(get_db), current_user: 
     if not query:
         return []
     try:
-        results = retrieve_chunks(db, current_user, query, limit=max(1, min(payload.limit, 30)))
+        results = retrieve_chunks(
+            db,
+            current_user,
+            query,
+            limit=max(1, min(payload.limit, 30)),
+            scope_type=payload.scope_type,
+            scope_id=payload.scope_id,
+        )
     except OpenAIUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return [result_to_dict(result) for result in results]

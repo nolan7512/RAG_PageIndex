@@ -1,20 +1,22 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 from anyio import to_thread
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Document, DocumentChunk, IngestionJob, User
+from app.models import ChunkLink, Document, DocumentChunk, DocumentLink, IngestionJob, RelatedDocument, User
 from app.queue import enqueue_ingestion
 from app.schemas import DocumentOut, DocumentReviewOut, DocumentStatusOut, ParsedBlockOut, ReviewChunkOut
 from app.services.permissions import can_access_document
 from app.services.ingestion_progress import init_progress, load_progress
 from app.services.storage import document_artifact_dir, original_file_path, remove_document_files
+from app.services.hierarchy import InvalidRelativePath, ensure_document_link, resolve_upload_location
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -26,10 +28,24 @@ SUPPORTED_SUFFIXES = {".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".png", ".jpg",
 @router.post("", response_model=DocumentOut)
 async def upload_document(
     file: UploadFile = File(...),
+    relative_path: Optional[str] = Form(None),
+    collection_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    filename = Path(file.filename or "document").name
+    upload_name = Path(file.filename or "document").name
+    try:
+        collection, folder, normalized_relative_path, folder_path = resolve_upload_location(
+            db,
+            current_user,
+            collection_id,
+            relative_path,
+            upload_name,
+        )
+    except InvalidRelativePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    filename = Path(normalized_relative_path).name
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {suffix or 'unknown'}")
@@ -40,10 +56,15 @@ async def upload_document(
         size_bytes=0,
         storage_path="pending",
         status="queued",
+        collection_id=collection.id,
+        folder_id=folder.id,
+        relative_path=normalized_relative_path,
+        folder_path=folder_path,
         uploaded_by=current_user.id,
     )
     db.add(document)
     db.flush()
+    ensure_document_link(db, document)
 
     target_path = original_file_path(document.id)
     size = 0
@@ -189,6 +210,11 @@ def delete_document(document_id: str, db: Session = Depends(get_db), current_use
         raise HTTPException(status_code=404, detail="Document not found")
     if not can_access_document(current_user, document):
         raise HTTPException(status_code=403, detail="Access denied")
+    db.query(ChunkLink).filter(ChunkLink.document_id == document.id).delete(synchronize_session=False)
+    db.query(DocumentLink).filter(DocumentLink.document_id == document.id).delete(synchronize_session=False)
+    db.query(RelatedDocument).filter(
+        (RelatedDocument.source_document_id == document.id) | (RelatedDocument.target_document_id == document.id)
+    ).delete(synchronize_session=False)
     db.delete(document)
     db.commit()
     remove_document_files(document.id)
