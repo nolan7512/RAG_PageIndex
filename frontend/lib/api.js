@@ -1,4 +1,28 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8111";
+const DEFAULT_API_PORT = "8111";
+const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+
+function resolveApiBase() {
+  const fallback = `http://localhost:${DEFAULT_API_PORT}`;
+  const configured = CONFIGURED_API_BASE || fallback;
+  if (typeof window === "undefined") {
+    return configured;
+  }
+
+  try {
+    const url = new URL(configured);
+    const pageHost = window.location.hostname;
+    const configuredHostIsLocal = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+    const pageHostIsRemote = pageHost && !["localhost", "127.0.0.1", "::1"].includes(pageHost);
+    if (configuredHostIsLocal && pageHostIsRemote) {
+      url.hostname = pageHost;
+    }
+    return url.origin;
+  } catch {
+    return configured;
+  }
+}
+
+export const API_BASE = resolveApiBase();
 
 export async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers || {});
