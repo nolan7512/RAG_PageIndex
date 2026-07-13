@@ -189,6 +189,15 @@ sudo docker compose up -d --build --force-recreate api worker frontend
 
 If host port `11434` is already used by another Ollama install, keep `OLLAMA_HOST_PORT=11435` or choose another free host port. The app containers still talk to Ollama through `http://ollama:11434/v1`, so changing `OLLAMA_HOST_PORT` only affects host access/debugging.
 
+If host Redis/Postgres ports are already used, change only the host-side ports. The app containers still use `redis:6379` and `postgres:5432` internally.
+
+```bash
+sudo sed -i 's/^REDIS_HOST_PORT=.*/REDIS_HOST_PORT=16379/' .env
+sudo sed -i 's/^POSTGRES_HOST_PORT=.*/POSTGRES_HOST_PORT=15432/' .env
+grep -q '^REDIS_HOST_PORT=' .env || echo 'REDIS_HOST_PORT=16379' | sudo tee -a .env
+grep -q '^POSTGRES_HOST_PORT=' .env || echo 'POSTGRES_HOST_PORT=15432' | sudo tee -a .env
+```
+
 Alternative small CPU models:
 
 ```bash
