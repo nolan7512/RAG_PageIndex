@@ -174,6 +174,7 @@ cd /opt/rag-pageindex
 
 sudo sed -i 's/^API_PROVIDER=.*/API_PROVIDER=ollama/' .env
 sudo sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local-llm/' .env
+sudo sed -i 's/^OLLAMA_HOST_PORT=.*/OLLAMA_HOST_PORT=11435/' .env
 sudo sed -i 's/^OPENAI_API_KEY=.*/OPENAI_API_KEY=ollama/' .env
 sudo sed -i 's#^OPENAI_BASE_URL=.*#OPENAI_BASE_URL=http://ollama:11434/v1#' .env
 sudo sed -i 's/^OPENAI_CHAT_MODEL=.*/OPENAI_CHAT_MODEL=deepseek-r1:1.5b/' .env
@@ -185,6 +186,8 @@ sudo docker compose up -d ollama
 sudo docker compose exec -T ollama ollama pull deepseek-r1:1.5b
 sudo docker compose up -d --build --force-recreate api worker frontend
 ```
+
+If host port `11434` is already used by another Ollama install, keep `OLLAMA_HOST_PORT=11435` or choose another free host port. The app containers still talk to Ollama through `http://ollama:11434/v1`, so changing `OLLAMA_HOST_PORT` only affects host access/debugging.
 
 Alternative small CPU models:
 
