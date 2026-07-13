@@ -90,7 +90,7 @@ services:
       CHAT_MIN_RELEVANCE_SCORE: ${CHAT_MIN_RELEVANCE_SCORE:-0.35}
       CHAT_MIN_LEXICAL_SCORE: ${CHAT_MIN_LEXICAL_SCORE:-0.08}
     ports:
-      - "8111:8000"
+      - "${API_HOST_PORT:-8111}:8000"
     volumes:
       - rag-data:/data
     depends_on:
@@ -166,7 +166,7 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8111}
     ports:
-      - "3111:3111"
+      - "${FRONTEND_HOST_PORT:-3111}:3111"
     depends_on:
       - api
 

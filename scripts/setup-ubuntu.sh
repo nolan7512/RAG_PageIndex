@@ -5,6 +5,8 @@ APP_NAME="rag-pageindex"
 DEFAULT_APP_DIR="/opt/rag-pageindex"
 APP_DIR="${APP_DIR:-$DEFAULT_APP_DIR}"
 PUBLIC_HOST="${PUBLIC_HOST:-}"
+FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-3111}"
+API_HOST_PORT="${API_HOST_PORT:-8111}"
 API_PROVIDER="${API_PROVIDER:-}"
 OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
@@ -260,8 +262,8 @@ ensure_env_file() {
   postgres_password="$(random_hex 18)"
   secret="$(random_hex 32)"
   admin_password="${ADMIN_PASSWORD:-$(random_hex 10)}"
-  frontend_origin="http://${PUBLIC_HOST}:3111"
-  api_base="http://${PUBLIC_HOST}:8111"
+  frontend_origin="http://${PUBLIC_HOST}:${FRONTEND_HOST_PORT}"
+  api_base="http://${PUBLIC_HOST}:${API_HOST_PORT}"
 
   set_env_if_default POSTGRES_PASSWORD "rag_password" "$postgres_password"
   set_env_if_default SECRET_KEY "replace-with-a-long-random-secret" "$secret"
@@ -273,6 +275,8 @@ ensure_env_file() {
   fi
   set_env_value FRONTEND_ORIGIN "$frontend_origin"
   set_env_value NEXT_PUBLIC_API_BASE_URL "$api_base"
+  set_env_value FRONTEND_HOST_PORT "$FRONTEND_HOST_PORT"
+  set_env_value API_HOST_PORT "$API_HOST_PORT"
   set_env_value ENABLE_RAG_ANYTHING "$ENABLE_RAG_ANYTHING"
   set_env_value PDF_OCR_ENABLED "$PDF_OCR_ENABLED"
   set_env_value PDF_OCR_ENGINE "$PDF_OCR_ENGINE"
@@ -585,9 +589,9 @@ set_env_if_default() {
 
 open_firewall_ports() {
   if command -v ufw >/dev/null 2>&1 && $SUDO ufw status | grep -q "Status: active"; then
-    log "Opening UFW ports 3111 and 8111"
-    $SUDO ufw allow 3111/tcp
-    $SUDO ufw allow 8111/tcp
+    log "Opening UFW ports ${FRONTEND_HOST_PORT} and ${API_HOST_PORT}"
+    $SUDO ufw allow "${FRONTEND_HOST_PORT}/tcp"
+    $SUDO ufw allow "${API_HOST_PORT}/tcp"
   fi
 }
 
@@ -616,8 +620,8 @@ print_summary() {
   cat <<EOF
 
 Project directory: ${APP_DIR}
-Frontend:          http://${PUBLIC_HOST}:3111
-API docs:          http://${PUBLIC_HOST}:8111/docs
+Frontend:          http://${PUBLIC_HOST}:$(get_env_value FRONTEND_HOST_PORT)
+API docs:          http://${PUBLIC_HOST}:$(get_env_value API_HOST_PORT)/docs
 
 Admin email:       $(get_env_value ADMIN_EMAIL)
 Admin password:    ${admin_password}

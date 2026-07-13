@@ -30,7 +30,7 @@ For a dry internal demo without an OpenAI key:
 USE_FAKE_OPENAI=true PUBLIC_HOST="your-server-ip-or-domain" ./scripts/setup-ubuntu.sh
 ```
 
-The script installs Docker Engine and the Compose plugin, creates `/opt/rag-pageindex`, generates `.env` secrets if needed, opens UFW ports `3111` and `8111` when UFW is active, then runs `docker compose up --build -d`.
+The script installs Docker Engine and the Compose plugin, creates `/opt/rag-pageindex`, generates `.env` secrets if needed, opens UFW ports from `FRONTEND_HOST_PORT` and `API_HOST_PORT` when UFW is active, then runs `docker compose up --build -d`.
 
 During setup, the installer asks which API provider to use, lets you paste the API key when needed, checks the `/models` endpoint when available, and lets you choose chat/embedding models. Supported quick choices are OpenAI, Gemini OpenAI-compatible, OpenRouter, Together AI, custom OpenAI-compatible endpoint, Ollama self-host local LLM, or fake demo mode.
 
@@ -196,6 +196,18 @@ sudo sed -i 's/^REDIS_HOST_PORT=.*/REDIS_HOST_PORT=16379/' .env
 sudo sed -i 's/^POSTGRES_HOST_PORT=.*/POSTGRES_HOST_PORT=15432/' .env
 grep -q '^REDIS_HOST_PORT=' .env || echo 'REDIS_HOST_PORT=16379' | sudo tee -a .env
 grep -q '^POSTGRES_HOST_PORT=' .env || echo 'POSTGRES_HOST_PORT=15432' | sudo tee -a .env
+```
+
+If API/frontend ports are already used, change the host ports and rebuild frontend so `NEXT_PUBLIC_API_BASE_URL` points to the new API port.
+
+```bash
+sudo sed -i 's/^API_HOST_PORT=.*/API_HOST_PORT=8112/' .env
+sudo sed -i 's/^FRONTEND_HOST_PORT=.*/FRONTEND_HOST_PORT=3112/' .env
+sudo sed -i 's#^FRONTEND_ORIGIN=.*#FRONTEND_ORIGIN=http://10.30.0.15:3112#' .env
+sudo sed -i 's#^NEXT_PUBLIC_API_BASE_URL=.*#NEXT_PUBLIC_API_BASE_URL=http://10.30.0.15:8112#' .env
+grep -q '^API_HOST_PORT=' .env || echo 'API_HOST_PORT=8112' | sudo tee -a .env
+grep -q '^FRONTEND_HOST_PORT=' .env || echo 'FRONTEND_HOST_PORT=3112' | sudo tee -a .env
+sudo docker compose up -d --build --force-recreate frontend api worker
 ```
 
 Alternative small CPU models:
