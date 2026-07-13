@@ -24,6 +24,8 @@ RERANKER_WEIGHT="${RERANKER_WEIGHT:-0.35}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 USE_FAKE_OPENAI="${USE_FAKE_OPENAI:-false}"
+COMPOSE_PROFILES="${COMPOSE_PROFILES:-}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-}"
 ENABLE_RAG_ANYTHING="${ENABLE_RAG_ANYTHING:-true}"
 PDF_OCR_ENABLED="${PDF_OCR_ENABLED:-true}"
 PDF_OCR_ENGINE="${PDF_OCR_ENGINE:-auto}"
@@ -318,6 +320,7 @@ configure_api_provider() {
       "OpenRouter OpenAI-compatible" \
       "Together AI OpenAI-compatible" \
       "Custom OpenAI-compatible endpoint" \
+      "Self-host local LLM with Ollama" \
       "Demo mode without API key")"
     case "$choice" in
       1) provider="openai" ;;
@@ -325,7 +328,8 @@ configure_api_provider() {
       3) provider="openrouter" ;;
       4) provider="together" ;;
       5) provider="custom" ;;
-      6) provider="fake" ;;
+      6) provider="ollama" ;;
+      7) provider="fake" ;;
     esac
   fi
   provider="${provider:-openai}"
@@ -362,6 +366,28 @@ configure_api_provider() {
       OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-$(prompt_text "Default embedding model" "$(get_env_value OPENAI_EMBEDDING_MODEL)")}"
       OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-$(prompt_text "Embedding dimensions" "$(get_env_value OPENAI_EMBEDDING_DIMENSIONS)")}"
       ;;
+    ollama|self-host|selfhost|local)
+      provider="ollama"
+      COMPOSE_PROFILES="local-llm"
+      if [[ -z "$OLLAMA_MODEL" && is_interactive ]]; then
+        OLLAMA_MODEL="$(choose_ollama_model)"
+      else
+        OLLAMA_MODEL="${OLLAMA_MODEL:-deepseek-r1:1.5b}"
+      fi
+      OPENAI_BASE_URL="http://ollama:11434/v1"
+      OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
+      OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-$OLLAMA_MODEL}"
+      EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-local_bge_m3}"
+      if [[ "$EMBEDDING_PROVIDER" == "openai" ]]; then
+        EMBEDDING_PROVIDER="local_bge_m3"
+      fi
+      LOCAL_EMBEDDING_MODEL="${LOCAL_EMBEDDING_MODEL:-BAAI/bge-m3}"
+      LOCAL_EMBEDDING_DIMENSIONS="${LOCAL_EMBEDDING_DIMENSIONS:-1024}"
+      LOCAL_EMBEDDING_DEVICE="${LOCAL_EMBEDDING_DEVICE:-cpu}"
+      LOCAL_EMBEDDING_BATCH_SIZE="${LOCAL_EMBEDDING_BATCH_SIZE:-8}"
+      RERANKER_PROVIDER="${RERANKER_PROVIDER:-none}"
+      warn "Self-host local LLM uses Ollama for chat and local BGE-M3 for embeddings. Switching embedding provider requires a clean re-index if data already exists."
+      ;;
     fake)
       USE_FAKE_OPENAI="true"
       OPENAI_BASE_URL=""
@@ -370,11 +396,11 @@ configure_api_provider() {
       OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-1536}"
       ;;
     *)
-      die "Unsupported API_PROVIDER '${provider}'. Use openai, gemini, openrouter, together, custom, or fake."
+      die "Unsupported API_PROVIDER '${provider}'. Use openai, gemini, openrouter, together, custom, ollama, or fake."
       ;;
   esac
 
-  if [[ "$provider" != "fake" ]]; then
+  if [[ "$provider" != "fake" && "$provider" != "ollama" ]]; then
     local existing_key
     existing_key="$(get_env_value OPENAI_API_KEY)"
     if [[ -z "$OPENAI_API_KEY" && is_interactive ]]; then
@@ -400,11 +426,36 @@ configure_api_provider() {
 
   set_env_value API_PROVIDER "$provider"
   set_env_value USE_FAKE_OPENAI "$USE_FAKE_OPENAI"
+  set_env_value COMPOSE_PROFILES "$COMPOSE_PROFILES"
+  set_env_value OLLAMA_MODEL "$OLLAMA_MODEL"
   set_env_value OPENAI_API_KEY "$OPENAI_API_KEY"
   set_env_value OPENAI_BASE_URL "$OPENAI_BASE_URL"
   set_env_value OPENAI_CHAT_MODEL "$OPENAI_CHAT_MODEL"
   set_env_value OPENAI_EMBEDDING_MODEL "$OPENAI_EMBEDDING_MODEL"
   set_env_value OPENAI_EMBEDDING_DIMENSIONS "$OPENAI_EMBEDDING_DIMENSIONS"
+  set_env_value EMBEDDING_PROVIDER "$EMBEDDING_PROVIDER"
+  set_env_value LOCAL_EMBEDDING_MODEL "$LOCAL_EMBEDDING_MODEL"
+  set_env_value LOCAL_EMBEDDING_DIMENSIONS "$LOCAL_EMBEDDING_DIMENSIONS"
+  set_env_value LOCAL_EMBEDDING_DEVICE "$LOCAL_EMBEDDING_DEVICE"
+  set_env_value LOCAL_EMBEDDING_BATCH_SIZE "$LOCAL_EMBEDDING_BATCH_SIZE"
+  set_env_value RERANKER_PROVIDER "$RERANKER_PROVIDER"
+}
+
+choose_ollama_model() {
+  if ! is_interactive; then
+    printf "%s" "${OLLAMA_MODEL:-deepseek-r1:1.5b}"
+    return
+  fi
+  local choice
+  choice="$(prompt_menu "Select local self-host chat model" \
+    "DeepSeek-R1 1.5B (deepseek-r1:1.5b)" \
+    "Qwen2.5 1.5B Instruct (qwen2.5:1.5b)" \
+    "Enter another Ollama model name")"
+  case "$choice" in
+    1) printf "deepseek-r1:1.5b" ;;
+    2) printf "qwen2.5:1.5b" ;;
+    3) prompt_text "Ollama model name" "${OLLAMA_MODEL:-deepseek-r1:1.5b}" ;;
+  esac
 }
 
 check_api_and_choose_models() {
@@ -542,6 +593,16 @@ start_stack() {
   cd "$APP_DIR"
   log "Building and starting Docker Compose stack"
   $SUDO docker compose pull postgres redis || true
+  if [[ "$(get_env_value API_PROVIDER)" == "ollama" ]]; then
+    $SUDO docker compose pull ollama || true
+    log "Starting Ollama local LLM service"
+    $SUDO docker compose up -d ollama
+    local ollama_model
+    ollama_model="$(get_env_value OLLAMA_MODEL)"
+    ollama_model="${ollama_model:-$(get_env_value OPENAI_CHAT_MODEL)}"
+    log "Pulling local model ${ollama_model}"
+    $SUDO docker compose exec -T ollama ollama pull "$ollama_model"
+  fi
   $SUDO docker compose up --build -d
 }
 
@@ -560,7 +621,8 @@ Admin email:       $(get_env_value ADMIN_EMAIL)
 Admin password:    ${admin_password}
 API provider:      $(get_env_value API_PROVIDER)
 Chat model:        $(get_env_value OPENAI_CHAT_MODEL)
-Embedding model:   $(get_env_value OPENAI_EMBEDDING_MODEL)
+Embedding provider:$(get_env_value EMBEDDING_PROVIDER)
+Embedding model:   $(if [[ "$(get_env_value EMBEDDING_PROVIDER)" == "local_bge_m3" ]]; then get_env_value LOCAL_EMBEDDING_MODEL; else get_env_value OPENAI_EMBEDDING_MODEL; fi)
 
 Useful commands:
   cd ${APP_DIR}

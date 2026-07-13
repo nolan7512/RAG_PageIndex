@@ -9,7 +9,7 @@ Internal MVP for a small CPU-only RAG file manager. It provides upload, document
 - Worker: RQ + Redis
 - Database: Postgres + pgvector
 - Storage: local Docker volume
-- LLM/Embedding: OpenAI API
+- LLM/Embedding: OpenAI-compatible API, optional Ollama self-host chat, optional local BGE-M3 embeddings
 - Parser: RAG-Anything adapter with lightweight fallback parsers
 - Long-document structure: PageIndex adapter with heuristic fallback tree
 
@@ -32,7 +32,7 @@ USE_FAKE_OPENAI=true PUBLIC_HOST="your-server-ip-or-domain" ./scripts/setup-ubun
 
 The script installs Docker Engine and the Compose plugin, creates `/opt/rag-pageindex`, generates `.env` secrets if needed, opens UFW ports `3111` and `8111` when UFW is active, then runs `docker compose up --build -d`.
 
-During setup, the installer asks which API provider to use, lets you paste the API key, checks the `/models` endpoint when available, and lets you choose chat/embedding models. Supported quick choices are OpenAI, Gemini OpenAI-compatible, OpenRouter, Together AI, custom OpenAI-compatible endpoint, or fake demo mode.
+During setup, the installer asks which API provider to use, lets you paste the API key when needed, checks the `/models` endpoint when available, and lets you choose chat/embedding models. Supported quick choices are OpenAI, Gemini OpenAI-compatible, OpenRouter, Together AI, custom OpenAI-compatible endpoint, Ollama self-host local LLM, or fake demo mode.
 
 1. Copy environment settings:
 
@@ -92,6 +92,7 @@ npm run build
 - Vietnamese retrieval now includes Unicode normalization and diacritic-insensitive lexical fallback. See `docs/VIETNAMESE_RAG_PLAN.md`.
 - The BGE-M3, hybrid search, OpenSearch, and reranker upgrade path is tracked in `docs/SELF_HOSTED_RETRIEVAL_PLAN.md`.
 - Self-hosted BGE-M3 embeddings and `bge-reranker-v2-m3` are opt-in with `EMBEDDING_PROVIDER=local_bge_m3` and `RERANKER_PROVIDER=local_bge_m3`. Switching from OpenAI embeddings requires a clean re-index because vector dimensions change.
+- Self-hosted chat models are supported through Ollama's OpenAI-compatible API. Choose `API_PROVIDER=ollama`, `COMPOSE_PROFILES=local-llm`, and `OPENAI_BASE_URL=http://ollama:11434/v1`. The setup script can pull `deepseek-r1:1.5b`, `qwen2.5:1.5b`, or any custom Ollama model name.
 - Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.
 - API keys, uploaded files, and generated artifacts are intentionally excluded from git.
 
@@ -163,6 +164,49 @@ sudo docker compose up -d
 ```
 
 Existing uploaded documents keep their old OCR/chunks/embeddings. Delete and upload the file again, or clear the database, when you need OCR and embeddings regenerated.
+
+### Use Local Self-Hosted Chat Model
+
+Recommended for offline/internal tests when you accept lower answer quality than hosted GPT-class models. This uses Ollama for chat and BGE-M3 for embeddings.
+
+```bash
+cd /opt/rag-pageindex
+
+sudo sed -i 's/^API_PROVIDER=.*/API_PROVIDER=ollama/' .env
+sudo sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local-llm/' .env
+sudo sed -i 's/^OPENAI_API_KEY=.*/OPENAI_API_KEY=ollama/' .env
+sudo sed -i 's#^OPENAI_BASE_URL=.*#OPENAI_BASE_URL=http://ollama:11434/v1#' .env
+sudo sed -i 's/^OPENAI_CHAT_MODEL=.*/OPENAI_CHAT_MODEL=deepseek-r1:1.5b/' .env
+sudo sed -i 's/^OLLAMA_MODEL=.*/OLLAMA_MODEL=deepseek-r1:1.5b/' .env
+sudo sed -i 's/^EMBEDDING_PROVIDER=.*/EMBEDDING_PROVIDER=local_bge_m3/' .env
+sudo sed -i 's/^RERANKER_PROVIDER=.*/RERANKER_PROVIDER=none/' .env
+
+sudo docker compose up -d ollama
+sudo docker compose exec -T ollama ollama pull deepseek-r1:1.5b
+sudo docker compose up -d --build --force-recreate api worker frontend
+```
+
+Alternative small CPU models:
+
+```bash
+sudo sed -i 's/^OPENAI_CHAT_MODEL=.*/OPENAI_CHAT_MODEL=qwen2.5:1.5b/' .env
+sudo sed -i 's/^OLLAMA_MODEL=.*/OLLAMA_MODEL=qwen2.5:1.5b/' .env
+sudo docker compose exec -T ollama ollama pull qwen2.5:1.5b
+sudo docker compose up -d --force-recreate api
+```
+
+Check the local model:
+
+```bash
+sudo docker compose exec -T ollama ollama list
+sudo docker compose exec -T api python -c "from app.config import get_settings; s=get_settings(); print(s.api_provider, s.openai_base_url, s.openai_chat_model, s.embedding_provider)"
+```
+
+### Optional Adjacent Platforms
+
+- Open WebUI: good as a separate ChatGPT-like UI for Ollama users and model testing. It overlaps with this project's current frontend, auth, and chat UI, so do not add it to the core MVP unless you want a second UI.
+- AnythingLLM: good for workspace-based RAG and team separation. It overlaps with document upload, permissions, retrieval, and chat. Consider it only if you want to replace large parts of this app rather than extend it.
+- RAGFlow: useful for stronger document understanding and complex table-heavy PDFs. For this project, prefer integrating specific parser/OCR improvements first, because the app already has its own storage, auth, retrieval, and review UI.
 
 ## Clear and Reinstall on Ubuntu
 
