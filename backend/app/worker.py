@@ -68,8 +68,22 @@ def ingest_document(document_id: str) -> None:
             {"chunk_count": len(chunks), "token_count": sum(chunk.token_count for chunk in chunks)},
         )
 
-        mark_step(document.id, "embedding", "processing", "Creating embeddings for chunks.")
-        embeddings = embed_texts([chunk.content for chunk in chunks])
+        mark_step(
+            document.id,
+            "embedding",
+            "processing",
+            "Loading embedding model and preparing chunks.",
+            {
+                "processed_chunks": 0,
+                "total_chunks": len(chunks),
+                "provider": settings.embedding_provider,
+                "model": _embedding_model_name(),
+                "batch_size": settings.local_embedding_batch_size
+                if settings.embedding_provider == "local_bge_m3"
+                else len(chunks),
+            },
+        )
+        embeddings = _create_embeddings_with_progress(document.id, [chunk.content for chunk in chunks])
         mark_step(
             document.id,
             "embedding",
@@ -78,10 +92,10 @@ def ingest_document(document_id: str) -> None:
             {
                 "embedding_count": len(embeddings),
                 "provider": settings.embedding_provider,
-                "model": settings.local_embedding_model
-                if settings.embedding_provider == "local_bge_m3"
-                else settings.openai_embedding_model,
+                "model": _embedding_model_name(),
                 "dimensions": settings.embedding_dimensions,
+                "processed_chunks": len(embeddings),
+                "total_chunks": len(chunks),
             },
         )
 
@@ -145,6 +159,53 @@ def ingest_document(document_id: str) -> None:
         raise
     finally:
         db.close()
+
+
+def _create_embeddings_with_progress(document_id: str, texts: list[str]) -> list[list[float]]:
+    if not texts:
+        return []
+    if settings.embedding_provider != "local_bge_m3":
+        return embed_texts(texts)
+
+    batch_size = max(1, settings.local_embedding_batch_size)
+    embeddings: list[list[float]] = []
+    total = len(texts)
+    for start in range(0, total, batch_size):
+        end = min(start + batch_size, total)
+        mark_step(
+            document_id,
+            "embedding",
+            "processing",
+            f"Embedding chunks {start + 1}-{end} of {total}.",
+            {
+                "processed_chunks": start,
+                "total_chunks": total,
+                "provider": settings.embedding_provider,
+                "model": _embedding_model_name(),
+                "batch_size": batch_size,
+            },
+        )
+        embeddings.extend(embed_texts(texts[start:end]))
+        mark_step(
+            document_id,
+            "embedding",
+            "processing",
+            f"Embedded {end} of {total} chunks.",
+            {
+                "processed_chunks": end,
+                "total_chunks": total,
+                "provider": settings.embedding_provider,
+                "model": _embedding_model_name(),
+                "batch_size": batch_size,
+            },
+        )
+    return embeddings
+
+
+def _embedding_model_name() -> str:
+    if settings.embedding_provider == "local_bge_m3":
+        return settings.local_embedding_model
+    return settings.openai_embedding_model
 
 
 def main() -> None:

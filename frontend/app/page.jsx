@@ -726,7 +726,13 @@ function summarizeIngestionProgress(steps) {
   let percent = Math.round((completed / total) * 100);
   if (activeStep) {
     const activeIndex = Math.max(0, ordered.indexOf(activeStep.name));
-    percent = Math.max(percent, Math.round(((activeIndex + 0.45) / total) * 100));
+    let activeProgress = 0.45;
+    const processedChunks = Number(activeStep.metadata?.processed_chunks);
+    const totalChunks = Number(activeStep.metadata?.total_chunks);
+    if (activeStep.name === "embedding" && totalChunks > 0 && processedChunks >= 0) {
+      activeProgress = Math.min(0.95, Math.max(0.05, processedChunks / totalChunks));
+    }
+    percent = Math.max(percent, Math.round(((activeIndex + activeProgress) / total) * 100));
   }
   if (readyStep) percent = 100;
   if (failedStep) percent = Math.max(5, percent);
@@ -743,6 +749,11 @@ function summarizeIngestionProgress(steps) {
     tone = "failed";
   } else if (activeStep) {
     label = `${stepLabel(activeStep.name)} đang xử lý`;
+    const processedChunks = Number(activeStep.metadata?.processed_chunks);
+    const totalChunks = Number(activeStep.metadata?.total_chunks);
+    if (activeStep.name === "embedding" && totalChunks > 0 && processedChunks >= 0) {
+      label = `embedding ${processedChunks}/${totalChunks} chunk`;
+    }
   }
 
   return { percent, label, tone, completed, total, activeStep, elapsed };

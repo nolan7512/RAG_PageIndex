@@ -90,10 +90,13 @@ services:
       CHAT_CHUNK_MAX_CHARS: ${CHAT_CHUNK_MAX_CHARS:-900}
       CHAT_MIN_RELEVANCE_SCORE: ${CHAT_MIN_RELEVANCE_SCORE:-0.35}
       CHAT_MIN_LEXICAL_SCORE: ${CHAT_MIN_LEXICAL_SCORE:-0.08}
+      HF_HOME: /models/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /models/sentence-transformers
     ports:
       - "${API_HOST_PORT:-8111}:8000"
     volumes:
       - rag-data:/data
+      - model-cache:/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -152,8 +155,11 @@ services:
       CHAT_CHUNK_MAX_CHARS: ${CHAT_CHUNK_MAX_CHARS:-900}
       CHAT_MIN_RELEVANCE_SCORE: ${CHAT_MIN_RELEVANCE_SCORE:-0.35}
       CHAT_MIN_LEXICAL_SCORE: ${CHAT_MIN_LEXICAL_SCORE:-0.08}
+      HF_HOME: /models/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /models/sentence-transformers
     volumes:
       - rag-data:/data
+      - model-cache:/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -176,3 +182,4 @@ volumes:
   postgres-data:
   rag-data:
   ollama-data:
+  model-cache:
