@@ -48,3 +48,9 @@ def test_no_information_answer_formats_topic():
     answer = chat._no_information_answer("chính sách thưởng tết như thế nào ?")
 
     assert answer == "Thông tin về chính sách thưởng Tết không được tìm thấy trong các tài liệu đã cung cấp."
+
+
+def test_clean_model_answer_removes_deepseek_thinking():
+    answer = chat._clean_model_answer("<think>I should answer in English.</think>\nNgày hiệu lực là 01/01/2024.")
+
+    assert answer == "Ngày hiệu lực là 01/01/2024."

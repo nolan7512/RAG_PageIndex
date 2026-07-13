@@ -13,11 +13,13 @@ from app.services.retrieval import RetrievedChunk, retrieve_chunks
 
 settings = get_settings()
 
-SYSTEM_PROMPT = """You are an internal document assistant.
-Answer only from the provided document context.
-If the context does not contain enough information, say that the information was not found in the documents.
-Do not invent numbers, dates, clauses, or source names.
-Use concise Vietnamese by default unless the user asks for another language.
+SYSTEM_PROMPT = """Bạn là trợ lý tài liệu nội bộ.
+Chỉ trả lời dựa trên ngữ cảnh tài liệu được cung cấp.
+BẮT BUỘC trả lời bằng tiếng Việt nếu người dùng hỏi bằng tiếng Việt.
+Không tự chuyển sang tiếng Anh, không giải thích bằng tiếng Anh.
+Nếu ngữ cảnh không đủ thông tin, nói rõ rằng thông tin không được tìm thấy trong các tài liệu đã cung cấp.
+Không bịa số liệu, ngày tháng, điều khoản, tên nguồn.
+Trả lời ngắn gọn, trực tiếp, không đưa phần suy luận nội bộ.
 """
 
 
@@ -89,11 +91,16 @@ def _generate_answer(message: str, retrieved: List[RetrievedChunk]) -> str:
         raise OpenAIUnavailable("OPENAI_API_KEY is not configured")
 
     context = _build_limited_context(retrieved)
-    user_prompt = f"""Document context:
+    user_prompt = f"""Ngữ cảnh tài liệu:
 {context}
 
-User question:
+Câu hỏi của người dùng:
 {message}
+
+Yêu cầu trả lời:
+- Trả lời bằng tiếng Việt.
+- Chỉ dùng thông tin trong ngữ cảnh tài liệu.
+- Nếu không đủ thông tin, trả lời đúng mẫu: "Thông tin không được tìm thấy trong các tài liệu đã cung cấp."
 """
 
     client = _client()
@@ -109,7 +116,7 @@ User question:
             )
             text = getattr(response, "output_text", None)
             if text:
-                return text.strip()
+                return _clean_model_answer(text)
 
         response = client.chat.completions.create(
             model=settings.openai_chat_model,
@@ -121,7 +128,14 @@ User question:
         )
     except OpenAIError as exc:
         raise OpenAIUnavailable(f"OpenAI chat request failed: {exc}") from exc
-    return response.choices[0].message.content.strip()
+    return _clean_model_answer(response.choices[0].message.content)
+
+
+def _clean_model_answer(answer: str) -> str:
+    text = (answer or "").strip()
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+    text = re.sub(r"^\s*(answer|final answer)\s*:\s*", "", text, flags=re.IGNORECASE).strip()
+    return text
 
 
 def _is_no_information_answer(answer: str) -> bool:
