@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     rag_storage_dir: str = "./data"
     max_upload_mb: int = 50
     frontend_origin: str = "http://localhost:3111"
-    cors_origins: List[str] = Field(default_factory=list)
+    cors_origins: str = ""
 
     enable_rag_anything: bool = True
     rag_anything_parser: str = "mineru"
@@ -63,15 +63,6 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value):
-        if value is None or value == "":
-            return []
-        if isinstance(value, str):
-            return [part.strip() for part in value.split(",") if part.strip()]
-        return value
-
     @field_validator("openai_api_key", "openai_base_url", "pageindex_command", mode="before")
     @classmethod
     def blank_string_to_none(cls, value):
@@ -81,7 +72,7 @@ class Settings(BaseSettings):
 
     @property
     def all_cors_origins(self) -> List[str]:
-        origins = list(self.cors_origins)
+        origins = [part.strip() for part in self.cors_origins.split(",") if part.strip()]
         if self.frontend_origin and self.frontend_origin not in origins:
             origins.append(self.frontend_origin)
         return origins
