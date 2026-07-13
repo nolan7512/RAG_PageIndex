@@ -8,6 +8,7 @@ import {
   CircleDashed,
   Eye,
   FileText,
+  FolderUp,
   Layers3,
   Loader2,
   LogOut,
@@ -29,6 +30,8 @@ const statusConfig = {
   ready: { label: "Sẵn sàng", tone: "success" },
   failed: { label: "Lỗi", tone: "danger" }
 };
+
+const supportedUploadExtensions = new Set(["pdf", "docx", "pptx", "xlsx", "txt", "png", "jpg", "jpeg"]);
 
 export default function HomePage() {
   const [user, setUser] = useState(null);
@@ -125,7 +128,9 @@ function Workbench({ user, onLogout }) {
   const [chatLog, setChatLog] = useState([]);
   const [review, setReview] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
 
   const readyCount = useMemo(() => documents.filter((document) => document.status === "ready").length, [documents]);
   const processingCount = useMemo(
@@ -170,20 +175,63 @@ function Workbench({ user, onLogout }) {
     return () => clearInterval(timer);
   }, [processingCount]);
 
-  async function uploadFile(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  async function uploadFiles(fileList, sourceLabel = "file") {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
     setNotice("");
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      await apiFetch("/documents", { method: "POST", body: form });
-      await loadDocuments();
-    } catch (err) {
-      setNotice(err.message);
-    } finally {
-      event.target.value = "";
+    setUploading(true);
+
+    const acceptedFiles = files.filter((file) => {
+      const extension = file.name.split(".").pop()?.toLowerCase();
+      return extension && supportedUploadExtensions.has(extension);
+    });
+
+    if (!acceptedFiles.length) {
+      setNotice("Không tìm thấy file hỗ trợ. Hệ thống nhận PDF, DOCX, PPTX, XLSX, TXT, PNG, JPG.");
+      setUploading(false);
+      return;
     }
+
+    let uploadedCount = 0;
+    const failedFiles = [];
+
+    try {
+      for (const file of acceptedFiles) {
+        const form = new FormData();
+        form.append("file", file, file.name);
+        try {
+          await apiFetch("/documents", { method: "POST", body: form });
+          uploadedCount += 1;
+          setNotice(`Đã gửi ${uploadedCount}/${acceptedFiles.length} ${sourceLabel} vào hàng đợi xử lý.`);
+        } catch (err) {
+          failedFiles.push(`${file.name}: ${err.message}`);
+        }
+      }
+      await loadDocuments();
+    } finally {
+      setUploading(false);
+    }
+
+    if (failedFiles.length) {
+      setNotice(`Đã gửi ${uploadedCount}/${acceptedFiles.length} file. Lỗi: ${failedFiles.slice(0, 3).join("; ")}`);
+      return;
+    }
+
+    setNotice(
+      sourceLabel === "file"
+        ? `Đã gửi ${uploadedCount} file vào hàng đợi xử lý.`
+        : `Đã gửi ${uploadedCount} file từ folder vào hàng đợi xử lý.`
+    );
+  }
+
+  async function uploadFile(event) {
+    await uploadFiles(event.target.files, "file");
+    event.target.value = "";
+  }
+
+  async function uploadFolder(event) {
+    await uploadFiles(event.target.files, "file từ folder");
+    event.target.value = "";
   }
 
   async function removeDocument(documentId) {
@@ -276,10 +324,31 @@ function Workbench({ user, onLogout }) {
         </div>
 
         <div className="sidebar-actions">
-          <input ref={fileInputRef} type="file" className="visually-hidden" onChange={uploadFile} />
-          <button className="primary-button" onClick={() => fileInputRef.current?.click()}>
-            <UploadCloud size={16} aria-hidden="true" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="visually-hidden"
+            accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg"
+            multiple
+            onChange={uploadFile}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            className="visually-hidden"
+            accept=".pdf,.docx,.pptx,.xlsx,.txt,.png,.jpg,.jpeg"
+            webkitdirectory=""
+            directory=""
+            multiple
+            onChange={uploadFolder}
+          />
+          <button className="primary-button" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+            {uploading ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <UploadCloud size={16} aria-hidden="true" />}
             Upload
+          </button>
+          <button className="ghost-button" disabled={uploading} onClick={() => folderInputRef.current?.click()}>
+            <FolderUp size={16} aria-hidden="true" />
+            Folder
           </button>
           <button className="icon-button" onClick={loadDocuments} title="Làm mới">
             <RefreshCw size={16} aria-hidden="true" />
