@@ -416,6 +416,7 @@ function DocumentList({ documents, loading, onDelete, onDownload, onReview, sele
               {formatBytes(document.size_bytes)} · {document.page_count || 0} trang
             </span>
             {document.error_message ? <em>{document.error_message}</em> : null}
+            <IngestionProgress steps={statuses?.[document.id]?.steps || []} compact />
             <IngestionSteps steps={statuses?.[document.id]?.steps || []} compact />
           </div>
           <StatusBadge status={document.status} />
@@ -492,6 +493,7 @@ function ReviewPanel({ review, loading, status, activePage, onPageChange, onClos
         <span>{review.parser_names.length ? review.parser_names.join(", ") : "parser chưa rõ"}</span>
       </div>
       <IngestionSteps steps={status?.steps || []} />
+      <IngestionProgress steps={status?.steps || []} />
 
       <div className="review-grid">
         <div className="pdf-preview">
@@ -686,6 +688,66 @@ function IngestionSteps({ steps, compact = false }) {
   );
 }
 
+function IngestionProgress({ steps, compact = false }) {
+  if (!steps?.length) return null;
+  const summary = summarizeIngestionProgress(steps);
+  if (!summary) return null;
+  return (
+    <div className={`ingestion-progress ${compact ? "compact" : ""}`} aria-label="Ingestion percent">
+      <div className="progress-line">
+        <strong>{summary.percent}%</strong>
+        <span>{summary.label}</span>
+        {!compact && summary.elapsed ? <em>{summary.elapsed}</em> : null}
+      </div>
+      <div className="progress-track" role="progressbar" aria-valuenow={summary.percent} aria-valuemin="0" aria-valuemax="100">
+        <div className={`progress-fill ${summary.tone}`} style={{ width: `${summary.percent}%` }} />
+      </div>
+      {!compact ? (
+        <div className="progress-detail">
+          <span>{summary.completed}/{summary.total} bước hoàn tất</span>
+          {summary.activeStep ? <span>Đang xử lý: {stepLabel(summary.activeStep.name)}</span> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function summarizeIngestionProgress(steps) {
+  const ordered = ["uploaded", "parsing", "ocr", "chunking", "embedding", "pageindex", "ready"];
+  const visibleSteps = ordered.map((name) => steps.find((step) => step.name === name)).filter(Boolean);
+  if (!visibleSteps.length) return null;
+
+  const failedStep = visibleSteps.find((step) => step.status === "failed");
+  const activeStep = visibleSteps.find((step) => step.status === "processing");
+  const readyStep = visibleSteps.find((step) => step.name === "ready" && step.status === "done");
+  const completed = visibleSteps.filter((step) => ["done", "skipped"].includes(step.status)).length;
+  const total = visibleSteps.length;
+
+  let percent = Math.round((completed / total) * 100);
+  if (activeStep) {
+    const activeIndex = Math.max(0, ordered.indexOf(activeStep.name));
+    percent = Math.max(percent, Math.round(((activeIndex + 0.45) / total) * 100));
+  }
+  if (readyStep) percent = 100;
+  if (failedStep) percent = Math.max(5, percent);
+  percent = Math.min(100, Math.max(0, percent));
+
+  const startedAt = visibleSteps.find((step) => step.started_at)?.started_at || visibleSteps[0]?.started_at;
+  const finishedAt = readyStep?.finished_at || failedStep?.finished_at;
+  const elapsed = formatElapsed(startedAt, finishedAt);
+
+  let label = readyStep ? "Hoàn tất" : `${percent}%`;
+  let tone = readyStep ? "done" : "active";
+  if (failedStep) {
+    label = "Lỗi xử lý";
+    tone = "failed";
+  } else if (activeStep) {
+    label = `${stepLabel(activeStep.name)} đang xử lý`;
+  }
+
+  return { percent, label, tone, completed, total, activeStep, elapsed };
+}
+
 function stepLabel(name) {
   const labels = {
     uploaded: "uploaded",
@@ -708,4 +770,18 @@ function formatBytes(bytes) {
   const units = ["B", "KB", "MB", "GB"];
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function formatElapsed(startedAt, finishedAt) {
+  if (!startedAt) return "";
+  const start = new Date(`${startedAt}Z`);
+  const end = finishedAt ? new Date(`${finishedAt}Z`) : new Date();
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
+  const seconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${rest}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }

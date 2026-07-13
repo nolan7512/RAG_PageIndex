@@ -458,6 +458,65 @@ button:focus-visible {
   gap: 5px;
 }
 
+.ingestion-progress {
+  display: grid;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ingestion-progress.compact {
+  padding: 8px 0 0;
+  border-bottom: 0;
+  gap: 5px;
+}
+
+.progress-line,
+.progress-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.progress-line strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-line em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.ingestion-progress.compact .progress-track {
+  height: 6px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 240ms ease;
+}
+
+.progress-fill.done {
+  background: oklch(0.53 0.12 145);
+}
+
+.progress-fill.failed {
+  background: var(--danger);
+}
+
 .ingestion-step {
   display: inline-flex;
   align-items: center;
