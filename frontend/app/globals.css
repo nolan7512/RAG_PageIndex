@@ -270,6 +270,23 @@ button:focus-visible {
   gap: 2px;
 }
 
+.tree-collection-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  border-radius: 7px;
+}
+
+.tree-collection-line:hover {
+  background: var(--surface);
+}
+
+.tree-collection-line.active {
+  background: oklch(0.91 0.04 110);
+  color: var(--primary);
+  font-weight: 700;
+}
+
 .tree-row {
   width: 100%;
   min-height: 30px;
@@ -311,10 +328,31 @@ button:focus-visible {
   background: var(--surface);
 }
 
+.tree-collection-line:hover .tree-row,
+.tree-collection-line.active .tree-row {
+  background: transparent;
+}
+
 .tree-row.active {
   background: oklch(0.91 0.04 110);
   color: var(--primary);
   font-weight: 700;
+}
+
+.tree-action {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+
+.tree-action:hover {
+  background: var(--surface-strong);
+  color: var(--primary);
 }
 
 .tree-branch {

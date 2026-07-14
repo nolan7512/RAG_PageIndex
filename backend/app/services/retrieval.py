@@ -6,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Collection, Document, DocumentChunk, FolderNode, PageIndex, StructureIndex, User
+from app.models import Collection, Document, DocumentChunk, FolderNode, PageIndex, RelatedDocument, StructureIndex, User
 from app.services.chunking import excerpt
 from app.services.embeddings import embed_text
 from app.services.hierarchy import STRUCTURE_ROUTE_TOP_K
@@ -59,6 +59,7 @@ def retrieve_chunks(
 
     boosted = list(combined.values())
     _apply_pageindex_boosts(db, query, boosted)
+    _apply_related_document_boosts(db, boosted)
     boosted.sort(key=lambda item: item.score, reverse=True)
     for result in boosted:
         result.lexical_score = max(result.lexical_score, lexical_score(query, result.chunk.content))
@@ -231,6 +232,32 @@ def _apply_pageindex_boosts(db: Session, query: str, results: List[RetrievedChun
     for result in results:
         boost = boosts_by_doc.get(result.document.id, {}).get(result.chunk.page_number, 0.0)
         result.score += boost
+
+
+def _apply_related_document_boosts(db: Session, results: List[RetrievedChunk]) -> None:
+    document_ids = list({result.document.id for result in results})
+    if len(document_ids) < 2:
+        return
+    relations = (
+        db.query(RelatedDocument)
+        .filter(
+            RelatedDocument.source_document_id.in_(document_ids),
+            RelatedDocument.target_document_id.in_(document_ids),
+        )
+        .all()
+    )
+    if not relations:
+        return
+
+    relation_scores = {}
+    for relation in relations:
+        relation_scores[relation.target_document_id] = max(
+            relation_scores.get(relation.target_document_id, 0.0),
+            min(0.08, max(0.0, relation.score) * 0.04),
+        )
+
+    for result in results:
+        result.score += relation_scores.get(result.document.id, 0.0)
 
 
 def _apply_reranker(query: str, results: List[RetrievedChunk]) -> None:

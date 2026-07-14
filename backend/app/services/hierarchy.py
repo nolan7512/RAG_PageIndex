@@ -214,6 +214,34 @@ def refresh_structure_indexes_for_document(db: Session, document: Document) -> N
     refresh_related_documents(db, document)
 
 
+def refresh_structure_indexes_for_collection(db: Session, collection: Collection) -> dict:
+    folders = (
+        db.query(FolderNode)
+        .filter(FolderNode.collection_id == collection.id)
+        .order_by(FolderNode.depth.asc(), FolderNode.path.asc())
+        .all()
+    )
+    refreshed = []
+    for folder in folders:
+        index = refresh_structure_index(db, "folder", collection.id, folder.id)
+        refreshed.append(index)
+    collection_index = refresh_structure_index(db, "collection", collection.id, None)
+    refreshed.append(collection_index)
+
+    documents = db.query(Document).filter(Document.collection_id == collection.id).all()
+    for document in documents:
+        refresh_related_documents(db, document)
+    db.commit()
+
+    return {
+        "collection_id": collection.id,
+        "folder_index_count": len(folders),
+        "structure_index_count": len(refreshed),
+        "document_count": len(documents),
+        "status": "ready" if refreshed and all(index.status == "ready" for index in refreshed) else "partial",
+    }
+
+
 def ancestor_folder_paths(folder_path: str) -> list[str]:
     if not folder_path:
         return [""]
@@ -327,7 +355,9 @@ def build_structure_summary(
 def refresh_related_documents(db: Session, document: Document) -> None:
     if not document.collection_id:
         return
-    db.query(RelatedDocument).filter(RelatedDocument.source_document_id == document.id).delete()
+    db.query(RelatedDocument).filter(
+        or_(RelatedDocument.source_document_id == document.id, RelatedDocument.target_document_id == document.id)
+    ).delete(synchronize_session=False)
     peers = (
         db.query(Document)
         .filter(Document.collection_id == document.collection_id, Document.id != document.id)
@@ -345,6 +375,14 @@ def refresh_related_documents(db: Session, document: Document) -> None:
             RelatedDocument(
                 source_document_id=document.id,
                 target_document_id=peer.id,
+                relation_type=relation_type,
+                score=score,
+            )
+        )
+        db.add(
+            RelatedDocument(
+                source_document_id=peer.id,
+                target_document_id=document.id,
                 relation_type=relation_type,
                 score=score,
             )

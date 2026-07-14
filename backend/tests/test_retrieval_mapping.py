@@ -1,6 +1,6 @@
-from app.models import Document, DocumentChunk
+from app.models import Document, DocumentChunk, RelatedDocument
 from app.services import retrieval
-from app.services.retrieval import RetrievedChunk, result_to_dict
+from app.services.retrieval import RetrievedChunk, _apply_related_document_boosts, result_to_dict
 
 
 def test_result_to_dict_maps_citation_fields():
@@ -54,4 +54,34 @@ def test_apply_reranker_blends_scores(monkeypatch):
 
     assert results[0].rerank_score == 0.0
     assert results[1].rerank_score == 1.0
+    assert results[1].score > results[0].score
+
+
+def test_related_document_boosts_connected_results(db_session):
+    first = Document(id="doc-1", filename="a.pdf", storage_path="/tmp/a.pdf", uploaded_by="user-1")
+    second = Document(id="doc-2", filename="b.pdf", storage_path="/tmp/b.pdf", uploaded_by="user-1")
+    first_chunk = DocumentChunk(id="chunk-1", document_id="doc-1", page_number=1, content="A", content_type="text", token_count=1)
+    second_chunk = DocumentChunk(id="chunk-2", document_id="doc-2", page_number=1, content="B", content_type="text", token_count=1)
+    db_session.add_all(
+        [
+            first,
+            second,
+            first_chunk,
+            second_chunk,
+            RelatedDocument(
+                source_document_id="doc-1",
+                target_document_id="doc-2",
+                relation_type="same_folder",
+                score=1.0,
+            ),
+        ]
+    )
+    db_session.flush()
+    results = [
+        RetrievedChunk(chunk=first_chunk, document=first, score=0.7),
+        RetrievedChunk(chunk=second_chunk, document=second, score=0.7),
+    ]
+
+    _apply_related_document_boosts(db_session, results)
+
     assert results[1].score > results[0].score

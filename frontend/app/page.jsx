@@ -293,6 +293,19 @@ function Workbench({ user, onLogout }) {
     }
   }
 
+  async function refreshCollectionIndex(collectionId) {
+    setNotice("");
+    try {
+      const result = await apiFetch(`/collections/${collectionId}/refresh-index`, { method: "POST" });
+      await loadCollections();
+      setNotice(
+        `Đã refresh ${result.structure_index_count} index cho ${result.document_count} file. Trạng thái: ${result.status}.`
+      );
+    } catch (err) {
+      setNotice(err.message);
+    }
+  }
+
   const [reviewPage, setReviewPage] = useState(1);
 
   async function openReview(documentId, pageNumber = 1) {
@@ -418,6 +431,7 @@ function Workbench({ user, onLogout }) {
           loading={collectionsLoading}
           selectedScope={selectedScope}
           onSelectScope={setSelectedScope}
+          onRefreshCollection={refreshCollectionIndex}
         />
 
         <DocumentList
@@ -519,7 +533,7 @@ function Workbench({ user, onLogout }) {
   );
 }
 
-function ScopeTree({ trees, loading, selectedScope, onSelectScope }) {
+function ScopeTree({ trees, loading, selectedScope, onSelectScope, onRefreshCollection }) {
   if (loading) {
     return (
       <section className="scope-panel" aria-label="Folder tree">
@@ -553,6 +567,7 @@ function ScopeTree({ trees, loading, selectedScope, onSelectScope }) {
               key={collection.id}
               selectedScope={selectedScope}
               onSelectScope={onSelectScope}
+              onRefreshCollection={onRefreshCollection}
             />
           ))
         ) : (
@@ -563,19 +578,29 @@ function ScopeTree({ trees, loading, selectedScope, onSelectScope }) {
   );
 }
 
-function CollectionTreeNode({ collection, selectedScope, onSelectScope }) {
+function CollectionTreeNode({ collection, selectedScope, onSelectScope, onRefreshCollection }) {
   const root = collection.tree || { children: [], documents: [] };
   return (
     <div className="tree-group">
-      <button
-        className={`tree-row collection ${selectedScope.type === "collection" && selectedScope.id === collection.id ? "active" : ""}`}
-        onClick={() =>
-          onSelectScope({ type: "collection", id: collection.id, label: collection.name, collectionId: collection.id })
-        }
-      >
-        <FolderTree size={15} aria-hidden="true" />
-        <span title={collection.name}>{collection.name}</span>
-      </button>
+      <div className={`tree-collection-line ${selectedScope.type === "collection" && selectedScope.id === collection.id ? "active" : ""}`}>
+        <button
+          className="tree-row collection"
+          onClick={() =>
+            onSelectScope({ type: "collection", id: collection.id, label: collection.name, collectionId: collection.id })
+          }
+        >
+          <FolderTree size={15} aria-hidden="true" />
+          <span title={collection.name}>{collection.name}</span>
+        </button>
+        <button
+          className="tree-action"
+          onClick={() => onRefreshCollection(collection.id)}
+          title="Refresh folder/root index"
+          aria-label={`Refresh index ${collection.name}`}
+        >
+          <RefreshCw size={13} aria-hidden="true" />
+        </button>
+      </div>
       <FolderTreeChildren
         node={root}
         collection={collection}

@@ -4,8 +4,14 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Collection, Document, User
-from app.schemas import CollectionCreate, CollectionOut, CollectionTreeOut
-from app.services.hierarchy import can_access_collection, collection_tree, create_collection, visible_collections
+from app.schemas import CollectionCreate, CollectionOut, CollectionRefreshOut, CollectionTreeOut
+from app.services.hierarchy import (
+    can_access_collection,
+    collection_tree,
+    create_collection,
+    refresh_structure_indexes_for_collection,
+    visible_collections,
+)
 from app.services.storage import remove_document_files
 
 
@@ -41,6 +47,20 @@ def get_collection_tree(
     if not can_access_collection(current_user, collection):
         raise HTTPException(status_code=403, detail="Access denied")
     return collection_tree(db, collection)
+
+
+@router.post("/{collection_id}/refresh-index", response_model=CollectionRefreshOut)
+def refresh_collection_index(
+    collection_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    collection = db.query(Collection).filter(Collection.id == collection_id).one_or_none()
+    if collection is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if not can_access_collection(current_user, collection):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return refresh_structure_indexes_for_collection(db, collection)
 
 
 @router.delete("/{collection_id}")

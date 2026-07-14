@@ -93,6 +93,7 @@ npm run build
 - The BGE-M3, hybrid search, OpenSearch, and reranker upgrade path is tracked in `docs/SELF_HOSTED_RETRIEVAL_PLAN.md`.
 - Self-hosted BGE-M3 embeddings and `bge-reranker-v2-m3` are opt-in with `EMBEDDING_PROVIDER=local_bge_m3` and `RERANKER_PROVIDER=local_bge_m3`. Switching from OpenAI embeddings requires a clean re-index because vector dimensions change.
 - Self-hosted chat models are supported through Ollama's OpenAI-compatible API. Choose `API_PROVIDER=ollama`, `COMPOSE_PROFILES=local-llm`, and `OPENAI_BASE_URL=http://ollama:11434/v1`. The setup script can pull `deepseek-r1:1.5b`, `qwen2.5:1.5b`, or any custom Ollama model name.
+- Folder uploads preserve the browser `webkitRelativePath`, create a collection/folder tree, and allow search/chat scopes at all, collection, folder, or document level. Use the refresh icon beside a collection when you need to rebuild folder/root structure indexes after a large import or version upgrade.
 - Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.
 - API keys, uploaded files, and generated artifacts are intentionally excluded from git.
 
@@ -164,6 +165,19 @@ sudo docker compose up -d
 ```
 
 Existing uploaded documents keep their old OCR/chunks/embeddings. Delete and upload the file again, or clear the database, when you need OCR and embeddings regenerated.
+
+### Refresh Folder-Tree Indexes
+
+After pulling a version that adds folder-tree RAG, existing documents are placed in the `Tài liệu lẻ` collection. New folder uploads create their own collection automatically. To rebuild folder/root structure indexes from the API:
+
+```bash
+TOKEN_COOKIE='rag_session=your-cookie'
+COLLECTION_ID='collection-id'
+curl -X POST "http://10.30.0.15:8111/collections/${COLLECTION_ID}/refresh-index" \
+  -H "Cookie: ${TOKEN_COOKIE}"
+```
+
+In the frontend, click the refresh icon next to a collection in the Scope tree. This rebuilds folder/root indexes and related-document links; it does not re-OCR or re-embed document chunks.
 
 ### Use Local Self-Hosted Chat Model
 

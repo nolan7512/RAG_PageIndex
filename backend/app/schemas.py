@@ -181,3 +181,11 @@ class CollectionTreeOut(BaseModel):
     root_path: str
     created_by: str
     tree: FolderTreeNodeOut
+
+
+class CollectionRefreshOut(BaseModel):
+    collection_id: str
+    folder_index_count: int
+    structure_index_count: int
+    document_count: int
+    status: str
