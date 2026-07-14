@@ -94,6 +94,7 @@ npm run build
 - Self-hosted BGE-M3 embeddings and `bge-reranker-v2-m3` are opt-in with `EMBEDDING_PROVIDER=local_bge_m3` and `RERANKER_PROVIDER=local_bge_m3`. Switching from OpenAI embeddings requires a clean re-index because vector dimensions change.
 - Self-hosted chat models are supported through Ollama's OpenAI-compatible API. Choose `API_PROVIDER=ollama`, `COMPOSE_PROFILES=local-llm`, and `OPENAI_BASE_URL=http://ollama:11434/v1`. The setup script can pull `deepseek-r1:1.5b`, `qwen2.5:1.5b`, or any custom Ollama model name.
 - Folder uploads preserve the browser `webkitRelativePath`, create a collection/folder tree, and allow search/chat scopes at all, collection, folder, or document level. Use the `Refresh` button in the Scope header, or the refresh icon beside a collection, when you need to rebuild folder/root structure indexes after a large import or version upgrade. Use the trash icon beside a folder to delete that folder, all subfolders, and all documents in that branch.
+- Admin users can open `Settings` from the sidebar to edit allowlisted runtime settings. Secret values are masked, raw `.env` editing is not exposed, and saved changes require a manual container restart.
 - Use the eye icon beside each uploaded document to review the source PDF beside parsed blocks and indexed chunks.
 - API keys, uploaded files, and generated artifacts are intentionally excluded from git.
 
@@ -178,6 +179,29 @@ curl -X POST "http://10.30.0.15:8111/collections/${COLLECTION_ID}/refresh-index"
 ```
 
 In the frontend, click `Refresh` in the Scope header after selecting a collection/folder, or click the refresh icon next to a collection in the Scope tree. This rebuilds folder/root indexes and related-document links; it does not re-OCR or re-embed document chunks.
+
+### Admin Settings UI
+
+Admin users can edit allowlisted `.env` settings from the frontend sidebar:
+
+```text
+Settings → edit grouped fields → Lưu settings
+```
+
+The UI masks secret values such as `OPENAI_API_KEY`. To keep an existing secret, leave it as `********`; paste a new key only when replacing it.
+
+The app does not restart Docker automatically. After saving settings, run:
+
+```bash
+cd /opt/rag-pageindex
+sudo docker compose up -d --force-recreate api worker frontend
+```
+
+The API container writes to `/app/.env`, mounted from the host `.env`. If this is the first deploy after pulling the settings UI, recreate the API container once so the mount is active:
+
+```bash
+sudo docker compose up -d --build --force-recreate api worker frontend
+```
 
 ### Use Local Self-Hosted Chat Model
 

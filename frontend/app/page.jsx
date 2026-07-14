@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Settings,
   XCircle,
   Trash2,
   UploadCloud
@@ -135,6 +136,11 @@ function Workbench({ user, onLogout }) {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedScope, setSelectedScope] = useState({ type: "all", id: null, label: "Tất cả tài liệu" });
+  const [viewMode, setViewMode] = useState("workspace");
+  const [adminSettings, setAdminSettings] = useState(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsResult, setSettingsResult] = useState(null);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
 
@@ -350,6 +356,39 @@ function Workbench({ user, onLogout }) {
     onLogout();
   }
 
+  async function openSettings() {
+    setViewMode("settings");
+    setSettingsResult(null);
+    setSettingsLoading(true);
+    setNotice("");
+    try {
+      setAdminSettings(await apiFetch("/admin/settings"));
+    } catch (err) {
+      setNotice(err.message);
+      setViewMode("workspace");
+    } finally {
+      setSettingsLoading(false);
+    }
+  }
+
+  async function saveSettings(values) {
+    setSettingsSaving(true);
+    setSettingsResult(null);
+    setNotice("");
+    try {
+      const result = await apiFetch("/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({ values })
+      });
+      setSettingsResult(result);
+      setAdminSettings(await apiFetch("/admin/settings"));
+    } catch (err) {
+      setNotice(err.message);
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
   async function submitSearch(event) {
     event.preventDefault();
     const trimmed = query.trim();
@@ -462,10 +501,18 @@ function Workbench({ user, onLogout }) {
           statuses={documentStatuses}
         />
 
-        <button className="ghost-button logout" onClick={logout}>
-          <LogOut size={16} aria-hidden="true" />
-          Đăng xuất
-        </button>
+        <div className="sidebar-footer">
+          {user.role === "admin" ? (
+            <button className="ghost-button logout" onClick={openSettings}>
+              <Settings size={16} aria-hidden="true" />
+              Settings
+            </button>
+          ) : null}
+          <button className="ghost-button logout" onClick={logout}>
+            <LogOut size={16} aria-hidden="true" />
+            Đăng xuất
+          </button>
+        </div>
       </aside>
 
       <section className="workspace">
@@ -484,6 +531,16 @@ function Workbench({ user, onLogout }) {
           ) : null}
         </header>
 
+        {viewMode === "settings" ? (
+          <SettingsPanel
+            payload={adminSettings}
+            loading={settingsLoading}
+            saving={settingsSaving}
+            result={settingsResult}
+            onSave={saveSettings}
+            onClose={() => setViewMode("workspace")}
+          />
+        ) : (
         <div className="work-grid">
           <ReviewPanel
             review={review}
@@ -546,6 +603,7 @@ function Workbench({ user, onLogout }) {
             </form>
           </section>
         </div>
+        )}
       </section>
     </main>
   );
@@ -606,6 +664,136 @@ function ScopeTree({ trees, loading, selectedScope, onSelectScope, onRefreshColl
         )}
       </div>
     </section>
+  );
+}
+
+function SettingsPanel({ payload, loading, saving, result, onSave, onClose }) {
+  if (loading || !payload) {
+    return (
+      <section className="tool-panel settings-panel" aria-labelledby="settings-title">
+        <div className="panel-heading review-heading">
+          <div className="heading-line">
+            <Settings size={17} aria-hidden="true" />
+            <h2 id="settings-title">Admin Settings</h2>
+          </div>
+          <button className="ghost-button" onClick={onClose}>Đóng</button>
+        </div>
+        <div className="settings-body">
+          <div className="skeleton" />
+          <div className="skeleton" />
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <SettingsForm
+      key={`${payload.env_path}:${result?.updated_keys?.join(",") || "initial"}`}
+      payload={payload}
+      saving={saving}
+      result={result}
+      onSave={onSave}
+      onClose={onClose}
+    />
+  );
+}
+
+function SettingsForm({ payload, saving, result, onSave, onClose }) {
+  const [values, setValues] = useState(() => settingsValuesFromPayload(payload));
+
+  function updateValue(key, value) {
+    setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    onSave(values);
+  }
+
+  return (
+    <section className="tool-panel settings-panel" aria-labelledby="settings-title">
+      <div className="panel-heading review-heading">
+        <div>
+          <div className="heading-line">
+            <Settings size={17} aria-hidden="true" />
+            <h2 id="settings-title">Admin Settings</h2>
+          </div>
+          <p>Chỉ các biến allowlist được sửa. Secret được mask và không hiển thị lại raw value.</p>
+        </div>
+        <button className="ghost-button" onClick={onClose}>Đóng</button>
+      </div>
+
+      <form className="settings-body" onSubmit={submit}>
+        <div className="settings-command">
+          <strong>Restart sau khi lưu</strong>
+          <code>{result?.restart_command || payload.restart_command}</code>
+          {result?.restart_required ? <span>Đã lưu. Cần chạy lệnh restart để config có hiệu lực.</span> : null}
+        </div>
+
+        <div className="settings-grid">
+          {payload.groups.map((group) => (
+            <fieldset className="settings-group" key={group.name}>
+              <legend>{group.name}</legend>
+              {group.settings.map((setting) => (
+                <SettingField
+                  key={setting.key}
+                  setting={setting}
+                  value={values[setting.key] ?? ""}
+                  onChange={(value) => updateValue(setting.key, value)}
+                />
+              ))}
+            </fieldset>
+          ))}
+        </div>
+
+        <div className="settings-actions">
+          <button className="primary-button" disabled={saving}>
+            {saving ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
+            Lưu settings
+          </button>
+          {result?.updated_keys?.length ? <span>Đã cập nhật: {result.updated_keys.join(", ")}</span> : null}
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function settingsValuesFromPayload(payload) {
+  const values = {};
+  for (const group of payload.groups || []) {
+    for (const setting of group.settings || []) {
+      values[setting.key] = setting.value ?? "";
+    }
+  }
+  return values;
+}
+
+function SettingField({ setting, value, onChange }) {
+  const inputType = setting.secret ? "password" : setting.type === "int" || setting.type === "float" ? "number" : "text";
+  return (
+    <label className="setting-field">
+      <span>
+        <strong>{setting.label}</strong>
+        <em>{setting.key}</em>
+      </span>
+      {setting.options?.length ? (
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          {!setting.options.includes("") ? <option value="" disabled>Chưa cấu hình</option> : null}
+          {setting.options.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          type={inputType}
+          step={setting.type === "float" ? "0.01" : undefined}
+          placeholder={setting.secret ? "Paste new key to replace" : ""}
+        />
+      )}
+      {setting.help ? <small>{setting.help}</small> : null}
+    </label>
   );
 }
 

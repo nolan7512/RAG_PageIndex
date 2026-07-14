@@ -189,3 +189,7 @@ class CollectionRefreshOut(BaseModel):
     structure_index_count: int
     document_count: int
     status: str
+
+
+class AdminSettingsUpdate(BaseModel):
+    values: Dict[str, str]

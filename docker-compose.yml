@@ -54,6 +54,7 @@ services:
       API_PROVIDER: ${API_PROVIDER:-openai}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-5.4-mini}
+      OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.1}
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
       OPENAI_EMBEDDING_DIMENSIONS: ${OPENAI_EMBEDDING_DIMENSIONS:-1536}
       USE_FAKE_OPENAI: ${USE_FAKE_OPENAI:-false}
@@ -90,11 +91,13 @@ services:
       CHAT_CHUNK_MAX_CHARS: ${CHAT_CHUNK_MAX_CHARS:-900}
       CHAT_MIN_RELEVANCE_SCORE: ${CHAT_MIN_RELEVANCE_SCORE:-0.35}
       CHAT_MIN_LEXICAL_SCORE: ${CHAT_MIN_LEXICAL_SCORE:-0.08}
+      ADMIN_SETTINGS_ENV_PATH: /app/.env
       HF_HOME: /models/huggingface
       SENTENCE_TRANSFORMERS_HOME: /models/sentence-transformers
     ports:
       - "${API_HOST_PORT:-8111}:8000"
     volumes:
+      - ./.env:/app/.env
       - rag-data:/data
       - model-cache:/models
     depends_on:
@@ -119,6 +122,7 @@ services:
       API_PROVIDER: ${API_PROVIDER:-openai}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-5.4-mini}
+      OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.1}
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
       OPENAI_EMBEDDING_DIMENSIONS: ${OPENAI_EMBEDDING_DIMENSIONS:-1536}
       USE_FAKE_OPENAI: ${USE_FAKE_OPENAI:-false}
