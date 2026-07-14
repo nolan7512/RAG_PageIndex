@@ -3,12 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Collection, Document, User
+from app.models import Collection, Document, FolderNode, User
 from app.schemas import CollectionCreate, CollectionOut, CollectionRefreshOut, CollectionTreeOut
 from app.services.hierarchy import (
     can_access_collection,
     collection_tree,
     create_collection,
+    delete_folder_branch,
     refresh_structure_indexes_for_collection,
     visible_collections,
 )
@@ -61,6 +62,31 @@ def refresh_collection_index(
     if not can_access_collection(current_user, collection):
         raise HTTPException(status_code=403, detail="Access denied")
     return refresh_structure_indexes_for_collection(db, collection)
+
+
+@router.delete("/{collection_id}/folders/{folder_id}")
+def delete_folder(
+    collection_id: str,
+    folder_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    collection = db.query(Collection).filter(Collection.id == collection_id).one_or_none()
+    if collection is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if not can_access_collection(current_user, collection):
+        raise HTTPException(status_code=403, detail="Access denied")
+    folder = (
+        db.query(FolderNode)
+        .filter(FolderNode.id == folder_id, FolderNode.collection_id == collection.id)
+        .one_or_none()
+    )
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    try:
+        return delete_folder_branch(db, collection, folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/{collection_id}")

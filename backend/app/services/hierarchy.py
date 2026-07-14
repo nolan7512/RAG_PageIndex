@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.services.chunking import excerpt
 from app.services.embeddings import OpenAIUnavailable, embed_text
+from app.services.storage import remove_document_files
 
 
 LOOSE_COLLECTION_ROOT = "__loose__"
@@ -240,6 +241,54 @@ def refresh_structure_indexes_for_collection(db: Session, collection: Collection
         "document_count": len(documents),
         "status": "ready" if refreshed and all(index.status == "ready" for index in refreshed) else "partial",
     }
+
+
+def delete_folder_branch(db: Session, collection: Collection, folder: FolderNode) -> dict:
+    if folder.collection_id != collection.id:
+        raise InvalidRelativePath("Folder does not belong to collection")
+    if not folder.path:
+        raise InvalidRelativePath("Cannot delete collection root folder; delete the collection instead")
+
+    folders = (
+        db.query(FolderNode)
+        .filter(FolderNode.collection_id == collection.id)
+        .filter(or_(FolderNode.path == folder.path, FolderNode.path.like(f"{folder.path}/%")))
+        .all()
+    )
+    folder_ids = [item.id for item in folders]
+    documents = (
+        db.query(Document)
+        .filter(Document.collection_id == collection.id)
+        .filter(or_(Document.folder_path == folder.path, Document.folder_path.like(f"{folder.path}/%")))
+        .all()
+    )
+    document_ids = [document.id for document in documents]
+
+    for document_id in document_ids:
+        remove_document_files(document_id)
+
+    if document_ids:
+        db.query(RelatedDocument).filter(
+            or_(RelatedDocument.source_document_id.in_(document_ids), RelatedDocument.target_document_id.in_(document_ids))
+        ).delete(synchronize_session=False)
+        db.query(ChunkLink).filter(ChunkLink.document_id.in_(document_ids)).delete(synchronize_session=False)
+        db.query(DocumentLink).filter(DocumentLink.document_id.in_(document_ids)).delete(synchronize_session=False)
+        db.query(Document).filter(Document.id.in_(document_ids)).delete(synchronize_session=False)
+
+    if folder_ids:
+        db.query(StructureIndex).filter(StructureIndex.folder_id.in_(folder_ids)).delete(synchronize_session=False)
+        db.query(FolderEdge).filter(
+            or_(FolderEdge.parent_folder_id.in_(folder_ids), FolderEdge.child_folder_id.in_(folder_ids))
+        ).delete(synchronize_session=False)
+        db.query(FolderNode).filter(FolderNode.id.in_(folder_ids)).delete(synchronize_session=False)
+
+    db.flush()
+    refresh_structure_index(db, "collection", collection.id, None)
+    remaining_documents = db.query(Document).filter(Document.collection_id == collection.id).all()
+    for document in remaining_documents:
+        refresh_related_documents(db, document)
+    db.commit()
+    return {"ok": True, "deleted_documents": len(document_ids), "deleted_folders": len(folder_ids)}
 
 
 def ancestor_folder_paths(folder_path: str) -> list[str]:

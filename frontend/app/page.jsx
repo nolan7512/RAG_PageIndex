@@ -306,6 +306,23 @@ function Workbench({ user, onLogout }) {
     }
   }
 
+  async function deleteFolder(collectionId, folderId, folderLabel) {
+    const confirmed = window.confirm(`Xóa folder "${folderLabel}" và toàn bộ file/folder con bên trong?`);
+    if (!confirmed) return;
+    setNotice("");
+    try {
+      const result = await apiFetch(`/collections/${collectionId}/folders/${folderId}`, { method: "DELETE" });
+      if (selectedScope.type === "folder" && selectedScope.id === folderId) {
+        setSelectedScope({ type: "collection", id: collectionId, label: "Collection", collectionId });
+      }
+      setReview(null);
+      await reloadWorkspace();
+      setNotice(`Đã xóa ${result.deleted_folders} folder và ${result.deleted_documents} file.`);
+    } catch (err) {
+      setNotice(err.message);
+    }
+  }
+
   const [reviewPage, setReviewPage] = useState(1);
 
   async function openReview(documentId, pageNumber = 1) {
@@ -432,6 +449,7 @@ function Workbench({ user, onLogout }) {
           selectedScope={selectedScope}
           onSelectScope={setSelectedScope}
           onRefreshCollection={refreshCollectionIndex}
+          onDeleteFolder={deleteFolder}
         />
 
         <DocumentList
@@ -533,7 +551,7 @@ function Workbench({ user, onLogout }) {
   );
 }
 
-function ScopeTree({ trees, loading, selectedScope, onSelectScope, onRefreshCollection }) {
+function ScopeTree({ trees, loading, selectedScope, onSelectScope, onRefreshCollection, onDeleteFolder }) {
   if (loading) {
     return (
       <section className="scope-panel" aria-label="Folder tree">
@@ -549,8 +567,20 @@ function ScopeTree({ trees, loading, selectedScope, onSelectScope, onRefreshColl
   return (
     <section className="scope-panel" aria-label="Folder tree">
       <div className="scope-heading">
-        <FolderTree size={16} aria-hidden="true" />
-        <strong>Scope</strong>
+        <div>
+          <FolderTree size={16} aria-hidden="true" />
+          <strong>Scope</strong>
+        </div>
+        {selectedScope.collectionId ? (
+          <button
+            className="scope-refresh-button"
+            onClick={() => onRefreshCollection(selectedScope.collectionId)}
+            title="Refresh folder/root index"
+          >
+            <RefreshCw size={13} aria-hidden="true" />
+            Refresh
+          </button>
+        ) : null}
       </div>
       <button
         className={`tree-row root ${selectedScope.type === "all" ? "active" : ""}`}
@@ -568,6 +598,7 @@ function ScopeTree({ trees, loading, selectedScope, onSelectScope, onRefreshColl
               selectedScope={selectedScope}
               onSelectScope={onSelectScope}
               onRefreshCollection={onRefreshCollection}
+              onDeleteFolder={onDeleteFolder}
             />
           ))
         ) : (
@@ -578,7 +609,7 @@ function ScopeTree({ trees, loading, selectedScope, onSelectScope, onRefreshColl
   );
 }
 
-function CollectionTreeNode({ collection, selectedScope, onSelectScope, onRefreshCollection }) {
+function CollectionTreeNode({ collection, selectedScope, onSelectScope, onRefreshCollection, onDeleteFolder }) {
   const root = collection.tree || { children: [], documents: [] };
   return (
     <div className="tree-group">
@@ -607,40 +638,52 @@ function CollectionTreeNode({ collection, selectedScope, onSelectScope, onRefres
         level={1}
         selectedScope={selectedScope}
         onSelectScope={onSelectScope}
+        onDeleteFolder={onDeleteFolder}
       />
     </div>
   );
 }
 
-function FolderTreeChildren({ node, collection, level, selectedScope, onSelectScope }) {
+function FolderTreeChildren({ node, collection, level, selectedScope, onSelectScope, onDeleteFolder }) {
   const children = node?.children || [];
   const documents = node?.documents || [];
   return (
     <>
       {children.map((child) => (
         <div className="tree-branch" key={child.id || child.path}>
-          <button
-            className={`tree-row folder ${selectedScope.type === "folder" && selectedScope.id === child.id ? "active" : ""}`}
-            style={{ "--level": level }}
-            onClick={() =>
-              onSelectScope({
-                type: "folder",
-                id: child.id,
-                label: `${collection.name}/${child.path}`.replace(/\/$/, ""),
-                collectionId: collection.id,
-                folderPath: child.path
-              })
-            }
-          >
-            <Folder size={15} aria-hidden="true" />
-            <span title={child.path}>{child.name}</span>
-          </button>
+          <div className={`tree-folder-line ${selectedScope.type === "folder" && selectedScope.id === child.id ? "active" : ""}`}>
+            <button
+              className="tree-row folder"
+              style={{ "--level": level }}
+              onClick={() =>
+                onSelectScope({
+                  type: "folder",
+                  id: child.id,
+                  label: `${collection.name}/${child.path}`.replace(/\/$/, ""),
+                  collectionId: collection.id,
+                  folderPath: child.path
+                })
+              }
+            >
+              <Folder size={15} aria-hidden="true" />
+              <span title={child.path}>{child.name}</span>
+            </button>
+            <button
+              className="tree-action danger"
+              onClick={() => onDeleteFolder(collection.id, child.id, child.path || child.name)}
+              title="Xóa folder"
+              aria-label={`Xóa folder ${child.path || child.name}`}
+            >
+              <Trash2 size={13} aria-hidden="true" />
+            </button>
+          </div>
           <FolderTreeChildren
             node={child}
             collection={collection}
             level={level + 1}
             selectedScope={selectedScope}
             onSelectScope={onSelectScope}
+            onDeleteFolder={onDeleteFolder}
           />
         </div>
       ))}

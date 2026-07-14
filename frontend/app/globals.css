@@ -253,10 +253,36 @@ button:focus-visible {
 .scope-heading {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--ink);
+}
+
+.scope-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.scope-refresh-button {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--white);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.scope-refresh-button:hover {
+  background: var(--surface);
+  color: var(--primary);
 }
 
 .tree-list {
@@ -270,18 +296,21 @@ button:focus-visible {
   gap: 2px;
 }
 
-.tree-collection-line {
+.tree-collection-line,
+.tree-folder-line {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
   border-radius: 7px;
 }
 
-.tree-collection-line:hover {
+.tree-collection-line:hover,
+.tree-folder-line:hover {
   background: var(--surface);
 }
 
-.tree-collection-line.active {
+.tree-collection-line.active,
+.tree-folder-line.active {
   background: oklch(0.91 0.04 110);
   color: var(--primary);
   font-weight: 700;
@@ -329,7 +358,9 @@ button:focus-visible {
 }
 
 .tree-collection-line:hover .tree-row,
-.tree-collection-line.active .tree-row {
+.tree-collection-line.active .tree-row,
+.tree-folder-line:hover .tree-row,
+.tree-folder-line.active .tree-row {
   background: transparent;
 }
 
@@ -353,6 +384,10 @@ button:focus-visible {
 .tree-action:hover {
   background: var(--surface-strong);
   color: var(--primary);
+}
+
+.tree-action.danger:hover {
+  color: var(--danger);
 }
 
 .tree-branch {
