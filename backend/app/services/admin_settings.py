@@ -1,3 +1,4 @@
+import errno
 import os
 import tempfile
 from dataclasses import dataclass
@@ -198,14 +199,30 @@ def _write_env_file(path: Path, updates: Dict[str, str], current: Dict[str, str]
         if key not in written and key not in current:
             output_lines.append(f"{key}={_quote_env_value(updates[key])}")
 
+    content = "\n".join(output_lines).rstrip() + "\n"
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_env_content(path, content)
+    except OSError as exc:
+        raise SettingsFileError(f"Cannot write settings env file {path}: {exc}") from exc
+
+
+def _write_env_content(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = None
+    try:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent), newline="\n") as handle:
-            handle.write("\n".join(output_lines).rstrip() + "\n")
+            handle.write(content)
             temp_name = handle.name
         Path(temp_name).replace(path)
     except OSError as exc:
-        raise SettingsFileError(f"Cannot write settings env file {path}: {exc}") from exc
+        if exc.errno != errno.EBUSY:
+            raise
+        path.write_text(content, encoding="utf-8")
+    finally:
+        if temp_name:
+            temp_path = Path(temp_name)
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 def _quote_env_value(value: str) -> str:

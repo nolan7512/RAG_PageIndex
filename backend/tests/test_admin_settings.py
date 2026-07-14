@@ -1,3 +1,5 @@
+import errno
+
 from app.services import admin_settings
 from app.services.admin_settings import MASK_VALUE, SettingsFileError, read_admin_settings, update_admin_settings
 
@@ -65,3 +67,19 @@ def test_admin_settings_reports_directory_env_path(monkeypatch, tmp_path):
         assert "is a directory" in str(exc)
     else:
         raise AssertionError("directory env path should be rejected")
+
+
+def test_update_admin_settings_falls_back_when_bind_mount_replace_is_busy(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("OPENAI_CHAT_MODEL=gpt-4o-mini\n", encoding="utf-8")
+    monkeypatch.setattr(admin_settings, "env_file_path", lambda: env_path)
+
+    def busy_replace(self, target):
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    monkeypatch.setattr(admin_settings.Path, "replace", busy_replace)
+
+    result = update_admin_settings({"OPENAI_CHAT_MODEL": "gpt-4.1-mini"})
+
+    assert result["updated_keys"] == ["OPENAI_CHAT_MODEL"]
+    assert env_path.read_text(encoding="utf-8") == "OPENAI_CHAT_MODEL=gpt-4.1-mini\n"
