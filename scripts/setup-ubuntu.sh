@@ -251,6 +251,9 @@ sync_project_to_app_dir() {
 
 ensure_env_file() {
   cd "$APP_DIR"
+  if [[ -d .env ]]; then
+    die "${APP_DIR}/.env is a directory, but Admin Settings requires it to be a file. Run: sudo rm -rf ${APP_DIR}/.env && cp .env.example .env"
+  fi
   if [[ ! -f .env ]]; then
     log "Creating .env"
     cp .env.example .env

@@ -11,7 +11,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/settings")
 def get_settings(current_user: User = Depends(require_admin)):
-    return read_admin_settings()
+    try:
+        return read_admin_settings()
+    except SettingsFileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/settings")

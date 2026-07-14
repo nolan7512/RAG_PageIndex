@@ -52,3 +52,16 @@ def test_update_admin_settings_validates_allowlist_and_types(monkeypatch, tmp_pa
         assert "must be one of" in str(exc)
     else:
         raise AssertionError("API_PROVIDER should require a supported provider")
+
+
+def test_admin_settings_reports_directory_env_path(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.mkdir()
+    monkeypatch.setattr(admin_settings, "env_file_path", lambda: env_path)
+
+    try:
+        read_admin_settings()
+    except SettingsFileError as exc:
+        assert "is a directory" in str(exc)
+    else:
+        raise AssertionError("directory env path should be rejected")

@@ -147,8 +147,17 @@ def _validate_setting_value(spec: SettingSpec, value: str) -> str:
 def _read_env_file(path: Path) -> Dict[str, str]:
     if not path.exists():
         return {}
+    if path.is_dir():
+        raise SettingsFileError(
+            f"Settings env path is a directory, not a file: {path}. "
+            "Remove that directory and create a real .env file before using Admin Settings."
+        )
     values: Dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise SettingsFileError(f"Cannot read settings env file {path}: {exc}") from exc
+    for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
@@ -158,9 +167,18 @@ def _read_env_file(path: Path) -> Dict[str, str]:
 
 
 def _write_env_file(path: Path, updates: Dict[str, str], current: Dict[str, str]) -> None:
-    if not path.exists():
-        path.write_text("", encoding="utf-8")
-    original_lines = path.read_text(encoding="utf-8").splitlines()
+    if path.exists() and path.is_dir():
+        raise SettingsFileError(
+            f"Settings env path is a directory, not a file: {path}. "
+            "Remove that directory and create a real .env file before using Admin Settings."
+        )
+    try:
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
+        original_lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise SettingsFileError(f"Cannot prepare settings env file {path}: {exc}") from exc
     written = set()
     output_lines = []
     for line in original_lines:
@@ -180,11 +198,14 @@ def _write_env_file(path: Path, updates: Dict[str, str], current: Dict[str, str]
         if key not in written and key not in current:
             output_lines.append(f"{key}={_quote_env_value(updates[key])}")
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent), newline="\n") as handle:
-        handle.write("\n".join(output_lines).rstrip() + "\n")
-        temp_name = handle.name
-    Path(temp_name).replace(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent), newline="\n") as handle:
+            handle.write("\n".join(output_lines).rstrip() + "\n")
+            temp_name = handle.name
+        Path(temp_name).replace(path)
+    except OSError as exc:
+        raise SettingsFileError(f"Cannot write settings env file {path}: {exc}") from exc
 
 
 def _quote_env_value(value: str) -> str:

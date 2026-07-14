@@ -16,6 +16,8 @@ Add a safe admin-only settings screen for operational RAG configuration without 
 - Mount host `.env` into the API container as `/app/.env`.
 - Return a restart command instead of restarting Docker from the app.
 - Add an admin frontend settings screen with grouped fields and a visible restart command.
+- Return clean JSON errors when the env file cannot be read/written, including the common case where Docker created `.env` as a directory.
+- Installer guards against `.env` being a directory before starting Compose.
 
 ## Explicit Non-Goals
 
@@ -32,3 +34,18 @@ sudo docker compose up -d --force-recreate api worker frontend
 ```
 
 This is intentionally manual for Phase 1. A future phase may add a separate host-side restart agent with a narrow command allowlist.
+
+## Operational Recovery
+
+If the browser shows a CORS-looking error for `/admin/settings`, check the API response/log first. A backend exception may prevent the browser from seeing a normal CORS response.
+
+Common `.env` mount repair:
+
+```bash
+cd ~/RAG_PageIndex
+sudo docker compose down
+sudo rm -rf .env
+cp .env.example .env
+# restore real secrets/config, then:
+sudo docker compose up -d --build --force-recreate api worker frontend
+```

@@ -203,6 +203,23 @@ The API container writes to `/app/.env`, mounted from the host `.env`. If this i
 sudo docker compose up -d --build --force-recreate api worker frontend
 ```
 
+If `Settings` fails with a CORS-looking browser message for `/admin/settings`, check whether `.env` was accidentally created as a directory by Docker:
+
+```bash
+cd ~/RAG_PageIndex
+ls -ld .env
+```
+
+If the output starts with `d`, repair it before restarting:
+
+```bash
+sudo docker compose down
+sudo rm -rf .env
+cp .env.example .env
+# restore API keys/passwords/config values in .env
+sudo docker compose up -d --build --force-recreate api worker frontend
+```
+
 ### Use Local Self-Hosted Chat Model
 
 Recommended for offline/internal tests when you accept lower answer quality than hosted GPT-class models. This uses Ollama for chat and BGE-M3 for embeddings.
